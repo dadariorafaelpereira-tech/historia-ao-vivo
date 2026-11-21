@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>História ao Vivo — MVP Voz + Jev</title>
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="manifest" href="./manifest.json" />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #131a2e;
+      --surface: #0f1628;
+      --border: #25304d;
+      --fg: #f1f5f9;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-fg: #082f49;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --surface: #f1f5f9;
+        --border: #e2e8f0;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --primary: #0284c7;
+        --primary-fg: #ffffff;
+        --success: #16a34a;
+        --warning: #d97706;
+        --error: #dc2626;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    @media (min-width: 960px) {
+      .grid {
+        grid-template-columns: 7fr 5fr;
+      }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .card-pad {
+      padding: 14px;
+    }
+
+    .stack { display: flex; flex-direction: column; gap: 12px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .between { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: opacity 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { opacity: 0.9; border-color: var(--primary); }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-fg);
+      border-color: transparent;
+    }
+    .btn-sm {
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 8px;
+    }
+
+    .stage-bar {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.75rem;
+    }
+
+    .pill {
+      padding: 3px 8px;
+      border-radius: 7px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .stage-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      user-select: none;
+      background: #090d24;
+    }
+
+    .stage-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .caption-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 18px 14px 10px;
+      background: linear-gradient(to top, rgba(0,0,0,0.82), rgba(0,0,0,0.4), transparent);
+      color: #ffffff;
+      font-size: 0.86rem;
+      font-weight: 500;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    }
+
+    textarea, input[type="url"] {
+      width: 100%;
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      resize: none;
+    }
+
+    textarea:focus, input[type="url"]:focus {
+      outline: 2px solid var(--primary);
+      outline-offset: 1px;
+    }
+
+    .label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      padding: 10px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      color: var(--fg);
+      border-bottom-color: var(--primary);
+    }
+
+    .metric-box {
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .bar-track {
+      position: relative;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--card);
+      overflow: hidden;
+      margin: 6px 0 4px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 300ms ease;
+    }
+
+    .marker {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    pre {
+      margin: 0;
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 0.74rem;
+      overflow-x: auto;
+      max-height: 210px;
+      line-height: 1.45;
+    }
+
+    .hidden { display: none !important; }
+    .muted { color: var(--muted); font-size: 0.75rem; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 2px 0; }
+
+    /* Animações do palco */
+    .stage-transition {
+      transition: opacity 850ms cubic-bezier(0.22, 1, 0.36, 1),
+                  transform 850ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    @keyframes float-slow { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+    @keyframes fly-bob { 0%, 100% { transform: translate(0px, 0px) rotate(-4deg); } 50% { transform: translate(6px, -14px) rotate(2deg); } }
+    @keyframes hero-bob { 0%, 100% { transform: translate(0px, 0px) rotate(-6deg); } 50% { transform: translate(-4px, -16px) rotate(0deg); } }
+    @keyframes cape-flutter { 0%, 100% { transform: skewX(0deg) scaleX(1); } 50% { transform: skewX(-8deg) scaleX(1.06); } }
+    @keyframes happy-bounce { 0%, 100% { transform: translateY(0px); } 45% { transform: translateY(-7px); } }
+    @keyframes twinkle { 0%, 100% { opacity: 0.25; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.15); } }
+    @keyframes cloud-drift { 0% { transform: translateX(0px); } 100% { transform: translateX(48px); } }
+    @keyframes tree-sway { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(1.6deg); } }
+    @keyframes firefly { 0%, 100% { opacity: 0.15; transform: translate(0px, 0px); } 50% { opacity: 0.95; transform: translate(10px, -12px); } }
+    @keyframes speed-line { 0% { transform: translateX(60px); opacity: 0; } 30% { opacity: 0.75; } 100% { transform: translateX(-140px); opacity: 0; } }
+    @keyframes rain-fall { 0% { transform: translate(12px, -30px); opacity: 0; } 20% { opacity: 0.65; } 100% { transform: translate(-28px, 160px); opacity: 0; } }
+    @keyframes tear-drop { 0% { transform: translateY(0px); opacity: 0; } 25% { opacity: 0.95; } 100% { transform: translateY(16px); opacity: 0; } }
+    @keyframes sparkle-pop { 0%, 100% { opacity: 0.2; transform: scale(0.7) rotate(0deg); } 50% { opacity: 1; transform: scale(1.15) rotate(20deg); } }
+    @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); } 50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
+
+    .anim-cloud { animation: cloud-drift 14s ease-in-out infinite alternate; }
+    .anim-cloud-slow { animation: cloud-drift 20s ease-in-out infinite alternate-reverse; }
+    .anim-twinkle { animation: twinkle 2.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .anim-tree { animation: tree-sway 5s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom center; }
+    .anim-firefly { animation: firefly 4.2s ease-in-out infinite; }
+    .anim-cape { animation: cape-flutter 0.8s ease-in-out infinite; transform-box: fill-box; transform-origin: left center; }
+    .anim-speed { animation: speed-line 0.9s linear infinite; }
+    .anim-rain { animation: rain-fall 0.85s linear infinite; }
+    .anim-tear { animation: tear-drop 1.8s ease-in infinite; }
+    .anim-sparkle { animation: sparkle-pop 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .mic-recording { animation: mic-pulse 1.3s ease-in-out infinite; background: var(--error) !important; color: #fff !important; }
+
+    #boy-rig { transition: transform 950ms cubic-bezier(0.22, 1, 0.36, 1); }
+    #boy-rig.is-flying #boy-body { animation: fly-bob 2.2s ease-in-out infinite; }
+    #boy-rig.is-happy:not(.is-flying) #boy-body { animation: happy-bounce 1.4s ease-in-out infinite; }
+
+    #hero-rig { transition: transform 950ms cubic-bezier(0.22, 1, 0.36, 1), opacity 700ms ease; }
+    #hero-rig.is-flying #hero-body { animation: hero-bob 2.4s ease-in-out infinite; }
+    #hero-rig.is-standing #hero-body { animation: float-slow 3.2s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="title-row">
+          <h1>História ao Vivo — MVP de Voz + Estado Jev</h1>
+          <span id="mode-badge" class="badge">Simulador local do contrato Jev</span>
+        </div>
+        <p class="subtitle">
+          Fale no microfone ou digite: o motor avalia <code class="mono">Choice</code> + <code class="mono">Noul</code> com histerese e transforma o palco em tempo real.
+        </p>
+      </div>
+      <div class="row">
+        <button id="btn-sound" type="button" class="btn btn-sm">
+          <span id="sound-icon">🔇</span><span id="sound-label">Som off</span>
+        </button>
+        <button id="btn-reset" type="button" class="btn btn-sm">Reiniciar cena</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="stack">
+        <div class="card">
+          <div class="stage-bar between">
+            <div class="row">
+              <span class="pill" id="pill-cenario">🏠 Quarto</span>
+              <span class="pill" id="pill-periodo">☀️ Dia</span>
+              <span class="pill" id="pill-emocao">😐 Neutro</span>
+              <span class="pill" id="pill-heroi">Herói: fora</span>
+              <span class="pill" id="pill-voo">No chão</span>
+            </div>
+            <span class="mono muted" id="latency-readout">Pronto</span>
+          </div>
+
+          <div class="stage-wrap">
+            <svg id="story-stage" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Palco ilustrado da história ao vivo">
+              <defs>
+                <linearGradient id="sky-day" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#38bdf8" />
+                  <stop offset="55%" stop-color="#93c5fd" />
+                  <stop offset="100%" stop-color="#fef3c7" />
+                </linearGradient>
+                <linearGradient id="sky-night" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#090d24" />
+                  <stop offset="55%" stop-color="#1e1b4b" />
+                  <stop offset="100%" stop-color="#312e81" />
+                </linearGradient>
+                <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#fef08a" stop-opacity="1" />
+                  <stop offset="55%" stop-color="#facc15" stop-opacity="0.45" />
+                  <stop offset="100%" stop-color="#facc15" stop-opacity="0" />
+                </radialGradient>
+                <radialGradient id="moon-glow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#e0e7ff" stop-opacity="0.65" />
+                  <stop offset="100%" stop-color="#818cf8" stop-opacity="0" />
+                </radialGradient>
+                <radialGradient id="lamp-glow" cx="50%" cy="40%" r="60%">
+                  <stop offset="0%" stop-color="#fde68a" stop-opacity="0.72" />
+                  <stop offset="60%" stop-color="#fbbf24" stop-opacity="0.22" />
+                  <stop offset="100%" stop-color="#fbbf24" stop-opacity="0" />
+                </radialGradient>
+                <linearGradient id="hero-trail" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
+                  <stop offset="100%" stop-color="#fde047" stop-opacity="0.75" />
+                </linearGradient>
+              </defs>
+
+              <!-- CAMADA 1: CÉU -->
+              <g id="layer-sky">
+                <rect x="0" y="0" width="800" height="450" fill="url(#sky-day)" />
+                <rect id="sky-night-rect" class="stage-transition" x="0" y="0" width="800" height="450" fill="url(#sky-night)" opacity="0" />
+                <g id="celestial-day" class="stage-transition" opacity="1">
+                  <circle cx="675" cy="86" r="68" fill="url(#sun-glow)" />
+                  <circle cx="675" cy="86" r="30" fill="#fde047" />
+                  <g class="anim-cloud" opacity="0.88">
+                    <path d="M95 102 C95 88 112 80 126 86 C134 72 158 72 166 86 C180 84 192 94 192 106 C192 118 182 124 170 124 L112 124 C101 124 95 114 95 102 Z" fill="#ffffff" />
+                  </g>
+                  <g class="anim-cloud-slow" opacity="0.72">
+                    <path d="M430 74 C430 63 444 56 456 62 C464 50 484 50 492 62 C504 60 515 68 515 78 C515 88 506 94 495 94 L444 94 C435 94 430 85 430 74 Z" fill="#ffffff" />
+                  </g>
+                </g>
+                <g id="celestial-night" class="stage-transition" opacity="0">
+                  <circle cx="670" cy="88" r="64" fill="url(#moon-glow)" />
+                  <path d="M674 56 A30 30 0 1 0 698 106 A24 24 0 1 1 674 56 Z" fill="#fef9c3" />
+                  <circle class="anim-twinkle" style="animation-delay:0s" cx="92" cy="54" r="2.2" fill="#fef9c3" />
+                  <circle class="anim-twinkle" style="animation-delay:0.5s" cx="176" cy="88" r="1.8" fill="#e0e7ff" />
+                  <circle class="anim-twinkle" style="animation-delay:1.1s" cx="255" cy="48" r="2.6" fill="#fde68a" />
+                  <circle class="anim-twinkle" style="animation-delay:0.3s" cx="356" cy="96" r="1.7" fill="#ffffff" />
+                  <circle class="anim-twinkle" style="animation-delay:1.7s" cx="445" cy="52" r="2.4" fill="#fef9c3" />
+                  <circle class="anim-twinkle" style="animation-delay:0.9s" cx="534" cy="78" r="1.9" fill="#e0e7ff" />
+                  <circle class="anim-twinkle" style="animation-delay:1.4s" cx="592" cy="42" r="2.2" fill="#fde68a" />
+                  <circle class="anim-twinkle" style="animation-delay:2.0s" cx="748" cy="126" r="2.0" fill="#ffffff" />
+                  <circle class="anim-twinkle" style="animation-delay:0.7s" cx="128" cy="144" r="1.6" fill="#e0e7ff" />
+                  <circle class="anim-twinkle" style="animation-delay:1.9s" cx="408" cy="134" r="1.8" fill="#fef9c3" />
+                </g>
+              </g>
+
+              <!-- CAMADA 2A: FLORESTA -->
+              <g id="scene-floresta" class="stage-transition" opacity="0">
+                <path d="M0 320 Q160 230 340 295 T720 270 L800 285 L800 450 L0 450 Z" fill="#15803d" opacity="0.72" />
+                <path d="M0 355 Q220 295 430 340 T800 320 L800 450 L0 450 Z" fill="#16a34a" />
+                <path d="M295 450 Q385 385 455 340 Q490 360 445 450 Z" fill="#d97706" opacity="0.45" />
+                <g class="anim-tree" style="animation-delay:0s">
+                  <rect x="76" y="255" width="18" height="95" rx="4" fill="#78350f" />
+                  <polygon points="85,155 36,265 134,265" fill="#14532d" />
+                  <polygon points="85,195 42,290 128,290" fill="#166534" />
+                </g>
+                <g class="anim-tree" style="animation-delay:1.2s">
+                  <rect x="168" y="275" width="16" height="80" rx="4" fill="#92400e" />
+                  <circle cx="176" cy="248" r="42" fill="#15803d" />
+                  <circle cx="152" cy="264" r="28" fill="#166534" />
+                  <circle cx="200" cy="266" r="26" fill="#22c55e" opacity="0.85" />
+                </g>
+                <g class="anim-tree" style="animation-delay:0.7s">
+                  <rect x="618" y="268" width="16" height="86" rx="4" fill="#78350f" />
+                  <circle cx="626" cy="238" r="44" fill="#166534" />
+                  <circle cx="652" cy="256" r="30" fill="#15803d" />
+                  <circle cx="598" cy="256" r="28" fill="#22c55e" opacity="0.8" />
+                </g>
+                <g class="anim-tree" style="animation-delay:1.8s">
+                  <rect x="714" y="245" width="18" height="110" rx="4" fill="#78350f" />
+                  <polygon points="723,142 672,258 774,258" fill="#14532d" />
+                  <polygon points="723,186 678,288 768,288" fill="#166534" />
+                </g>
+                <circle cx="42" cy="435" r="42" fill="#14532d" />
+                <circle cx="96" cy="442" r="32" fill="#15803d" />
+                <circle cx="755" cy="435" r="46" fill="#14532d" />
+                <circle cx="700" cy="444" r="30" fill="#15803d" />
+                <g id="forest-fireflies" class="stage-transition" opacity="0">
+                  <circle class="anim-firefly" style="animation-delay:0s" cx="145" cy="315" r="3.2" fill="#fde047" />
+                  <circle class="anim-firefly" style="animation-delay:1.1s" cx="255" cy="285" r="2.8" fill="#fef08a" />
+                  <circle class="anim-firefly" style="animation-delay:2.0s" cx="558" cy="298" r="3.4" fill="#fde047" />
+                  <circle class="anim-firefly" style="animation-delay:0.6s" cx="672" cy="325" r="2.6" fill="#fef08a" />
+                  <circle class="anim-firefly" style="animation-delay:1.6s" cx="385" cy="340" r="2.5" fill="#fde047" />
+                </g>
+                <rect id="forest-night-tint" class="stage-transition" x="0" y="140" width="800" height="310" fill="#0f172a" opacity="0" />
+              </g>
+
+              <!-- CAMADA 2B: CIDADE -->
+              <g id="scene-cidade" class="stage-transition" opacity="0">
+                <g fill="#475569" opacity="0.72">
+                  <rect x="20" y="210" width="66" height="175" rx="3" />
+                  <rect x="98" y="175" width="74" height="210" rx="3" />
+                  <rect x="195" y="220" width="68" height="165" rx="3" />
+                  <rect x="520" y="190" width="82" height="195" rx="3" />
+                  <rect x="615" y="155" width="76" height="230" rx="3" />
+                  <rect x="706" y="215" width="74" height="170" rx="3" />
+                </g>
+                <g fill="#334155">
+                  <rect x="44" y="242" width="88" height="148" rx="4" />
+                  <rect x="148" y="196" width="96" height="194" rx="4" />
+                  <rect x="262" y="258" width="82" height="132" rx="4" />
+                  <rect x="445" y="236" width="94" height="154" rx="4" />
+                  <rect x="556" y="182" width="102" height="208" rx="4" />
+                  <rect x="676" y="245" width="92" height="145" rx="4" />
+                </g>
+                <g fill="#94a3b8" opacity="0.55">
+                  <rect x="60" y="260" width="14" height="18" rx="2" /><rect x="82" y="260" width="14" height="18" rx="2" /><rect x="104" y="260" width="14" height="18" rx="2" />
+                  <rect x="60" y="290" width="14" height="18" rx="2" /><rect x="82" y="290" width="14" height="18" rx="2" /><rect x="104" y="290" width="14" height="18" rx="2" />
+                  <rect x="166" y="216" width="16" height="20" rx="2" /><rect x="190" y="216" width="16" height="20" rx="2" /><rect x="214" y="216" width="16" height="20" rx="2" />
+                  <rect x="166" y="248" width="16" height="20" rx="2" /><rect x="190" y="248" width="16" height="20" rx="2" /><rect x="214" y="248" width="16" height="20" rx="2" />
+                  <rect x="166" y="280" width="16" height="20" rx="2" /><rect x="190" y="280" width="16" height="20" rx="2" /><rect x="214" y="280" width="16" height="20" rx="2" />
+                  <rect x="462" y="256" width="16" height="18" rx="2" /><rect x="486" y="256" width="16" height="18" rx="2" /><rect x="510" y="256" width="16" height="18" rx="2" />
+                  <rect x="574" y="204" width="16" height="20" rx="2" /><rect x="600" y="204" width="16" height="20" rx="2" /><rect x="626" y="204" width="16" height="20" rx="2" />
+                  <rect x="574" y="236" width="16" height="20" rx="2" /><rect x="600" y="236" width="16" height="20" rx="2" /><rect x="626" y="236" width="16" height="20" rx="2" />
+                  <rect x="574" y="268" width="16" height="20" rx="2" /><rect x="600" y="268" width="16" height="20" rx="2" /><rect x="626" y="268" width="16" height="20" rx="2" />
+                  <rect x="694" y="264" width="14" height="18" rx="2" /><rect x="716" y="264" width="14" height="18" rx="2" /><rect x="738" y="264" width="14" height="18" rx="2" />
+                </g>
+                <g id="city-lights" class="stage-transition" opacity="0" fill="#fde047">
+                  <rect x="60" y="260" width="14" height="18" rx="2" /><rect x="104" y="260" width="14" height="18" rx="2" />
+                  <rect x="82" y="290" width="14" height="18" rx="2" />
+                  <rect x="166" y="216" width="16" height="20" rx="2" /><rect x="214" y="216" width="16" height="20" rx="2" />
+                  <rect x="190" y="248" width="16" height="20" rx="2" />
+                  <rect x="166" y="280" width="16" height="20" rx="2" /><rect x="214" y="280" width="16" height="20" rx="2" />
+                  <rect x="280" y="276" width="14" height="16" rx="2" /><rect x="308" y="276" width="14" height="16" rx="2" />
+                  <rect x="462" y="256" width="16" height="18" rx="2" /><rect x="510" y="256" width="16" height="18" rx="2" />
+                  <rect x="486" y="288" width="16" height="18" rx="2" />
+                  <rect x="574" y="204" width="16" height="20" rx="2" /><rect x="600" y="204" width="16" height="20" rx="2" />
+                  <rect x="626" y="236" width="16" height="20" rx="2" /><rect x="574" y="268" width="16" height="20" rx="2" />
+                  <rect x="600" y="268" width="16" height="20" rx="2" />
+                  <rect x="694" y="264" width="14" height="18" rx="2" /><rect x="738" y="264" width="14" height="18" rx="2" />
+                  <circle cx="248" cy="348" r="24" fill="#fef08a" opacity="0.28" />
+                  <circle cx="548" cy="348" r="24" fill="#fef08a" opacity="0.28" />
+                </g>
+                <rect x="0" y="384" width="800" height="66" fill="#1e293b" />
+                <rect x="0" y="380" width="800" height="10" fill="#64748b" />
+                <g fill="#f8fafc" opacity="0.5">
+                  <rect x="40" y="416" width="54" height="6" rx="3" /><rect x="150" y="416" width="54" height="6" rx="3" />
+                  <rect x="260" y="416" width="54" height="6" rx="3" /><rect x="370" y="416" width="54" height="6" rx="3" />
+                  <rect x="480" y="416" width="54" height="6" rx="3" /><rect x="590" y="416" width="54" height="6" rx="3" />
+                  <rect x="700" y="416" width="54" height="6" rx="3" />
+                </g>
+                <rect x="246" y="346" width="4" height="36" fill="#94a3b8" />
+                <circle cx="248" cy="346" r="5" fill="#fef08a" />
+                <rect x="546" y="346" width="4" height="36" fill="#94a3b8" />
+                <circle cx="548" cy="346" r="5" fill="#fef08a" />
+              </g>
+
+              <!-- CAMADA 2C: QUARTO -->
+              <g id="scene-quarto" class="stage-transition" opacity="1">
+                <g fill="#f5ebe0">
+                  <rect x="0" y="0" width="800" height="68" />
+                  <rect x="0" y="68" width="305" height="145" />
+                  <rect x="495" y="68" width="305" height="145" />
+                  <rect x="0" y="213" width="800" height="142" />
+                </g>
+                <rect x="0" y="345" width="800" height="10" fill="#d6c5b3" />
+                <rect x="0" y="355" width="800" height="95" fill="#c08457" />
+                <line x1="0" y1="386" x2="800" y2="386" stroke="#a16237" stroke-width="2" opacity="0.45" />
+                <line x1="0" y1="418" x2="800" y2="418" stroke="#a16237" stroke-width="2" opacity="0.45" />
+                <rect x="305" y="68" width="190" height="145" rx="8" fill="none" stroke="#92400e" stroke-width="8" />
+                <line x1="400" y1="68" x2="400" y2="213" stroke="#92400e" stroke-width="5" />
+                <line x1="305" y1="140" x2="495" y2="140" stroke="#92400e" stroke-width="5" />
+                <rect x="296" y="210" width="208" height="10" rx="4" fill="#78350f" />
+                <rect x="38" y="268" width="18" height="98" rx="4" fill="#78350f" />
+                <rect x="52" y="302" width="190" height="44" rx="8" fill="#60a5fa" />
+                <rect x="56" y="288" width="54" height="22" rx="9" fill="#ffffff" />
+                <rect x="52" y="338" width="194" height="20" rx="4" fill="#92400e" />
+                <rect x="234" y="322" width="14" height="44" rx="4" fill="#78350f" />
+                <rect x="588" y="180" width="146" height="172" rx="6" fill="#92400e" />
+                <rect x="598" y="192" width="126" height="44" rx="3" fill="#78350f" />
+                <rect x="598" y="246" width="126" height="44" rx="3" fill="#78350f" />
+                <rect x="598" y="300" width="126" height="42" rx="3" fill="#78350f" />
+                <rect x="606" y="204" width="14" height="32" rx="2" fill="#ef4444" />
+                <rect x="623" y="200" width="14" height="36" rx="2" fill="#3b82f6" />
+                <rect x="640" y="208" width="14" height="28" rx="2" fill="#22c55e" />
+                <rect x="658" y="202" width="16" height="34" rx="2" fill="#f59e0b" />
+                <rect x="606" y="258" width="16" height="32" rx="2" fill="#a855f7" />
+                <rect x="626" y="264" width="14" height="26" rx="2" fill="#ec4899" />
+                <rect x="682" y="256" width="16" height="34" rx="2" fill="#14b8a6" />
+                <rect x="262" y="306" width="60" height="58" rx="5" fill="#92400e" />
+                <circle cx="292" cy="334" r="3.5" fill="#fde68a" />
+                <rect x="288" y="284" width="8" height="22" fill="#78350f" />
+                <polygon points="274,286 310,286 303,260 281,260" fill="#fbbf24" />
+                <rect id="room-night-tint" class="stage-transition" x="0" y="0" width="800" height="450" fill="#0f172a" opacity="0" />
+                <circle id="room-lamp-glow" class="stage-transition" cx="292" cy="276" r="115" fill="url(#lamp-glow)" opacity="0" />
+              </g>
+
+              <!-- CAMADA 3: EFEITOS -->
+              <g id="layer-speed-lines" class="stage-transition" opacity="0" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round">
+                <line class="anim-speed" style="animation-delay:0s" x1="650" y1="110" x2="730" y2="110" />
+                <line class="anim-speed" style="animation-delay:0.25s" x1="590" y1="168" x2="680" y2="168" />
+                <line class="anim-speed" style="animation-delay:0.5s" x1="680" y1="225" x2="755" y2="225" />
+                <line class="anim-speed" style="animation-delay:0.7s" x1="540" y1="92" x2="610" y2="92" />
+                <line class="anim-speed" style="animation-delay:0.35s" x1="630" y1="262" x2="700" y2="262" />
+              </g>
+
+              <g id="layer-rain" class="stage-transition" opacity="0" stroke="#bae6fd" stroke-width="2" stroke-linecap="round">
+                <line class="anim-rain" style="animation-delay:0s" x1="90" y1="20" x2="78" y2="54" />
+                <line class="anim-rain" style="animation-delay:0.2s" x1="170" y1="40" x2="158" y2="74" />
+                <line class="anim-rain" style="animation-delay:0.4s" x1="250" y1="15" x2="238" y2="49" />
+                <line class="anim-rain" style="animation-delay:0.1s" x1="340" y1="30" x2="328" y2="64" />
+                <line class="anim-rain" style="animation-delay:0.55s" x1="430" y1="10" x2="418" y2="44" />
+                <line class="anim-rain" style="animation-delay:0.3s" x1="520" y1="35" x2="508" y2="69" />
+                <line class="anim-rain" style="animation-delay:0.65s" x1="610" y1="18" x2="598" y2="52" />
+                <line class="anim-rain" style="animation-delay:0.15s" x1="700" y1="25" x2="688" y2="59" />
+                <line class="anim-rain" style="animation-delay:0.45s" x1="130" y1="120" x2="118" y2="154" />
+                <line class="anim-rain" style="animation-delay:0.75s" x1="390" y1="110" x2="378" y2="144" />
+                <line class="anim-rain" style="animation-delay:0.35s" x1="640" y1="120" x2="628" y2="154" />
+              </g>
+
+              <!-- CAMADA 4: PERSONAGENS -->
+              <g id="hero-rig" transform="translate(880, 215)" opacity="0">
+                <g id="hero-body">
+                  <path id="hero-flight-trail" class="stage-transition" d="M-135 12 Q-65 2 -12 8 L-12 24 Q-65 30 -135 20 Z" fill="url(#hero-trail)" opacity="0" />
+                  <path class="anim-cape" d="M-12 -14 C-54 -10 -78 14 -88 46 C-56 42 -32 34 -8 24 Z" fill="#dc2626" />
+                  <ellipse id="hero-shadow" class="stage-transition" cx="4" cy="96" rx="28" ry="7" fill="#000000" opacity="0.24" />
+                  <rect x="-12" y="34" width="12" height="40" rx="5" fill="#1d4ed8" />
+                  <rect x="6" y="34" width="12" height="40" rx="5" fill="#1d4ed8" />
+                  <rect x="-14" y="64" width="16" height="18" rx="5" fill="#dc2626" />
+                  <rect x="5" y="64" width="16" height="18" rx="5" fill="#dc2626" />
+                  <rect x="-18" y="-14" width="42" height="52" rx="14" fill="#2563eb" />
+                  <polygon points="3,0 6,9 16,9 8,15 11,24 3,19 -5,24 -2,15 -10,9 0,9" fill="#fde047" />
+                  <rect x="-18" y="28" width="42" height="8" rx="3" fill="#facc15" />
+                  <path d="M-16 -4 Q-30 12 -22 24" stroke="#2563eb" stroke-width="11" stroke-linecap="round" fill="none" />
+                  <path d="M22 -4 Q38 -20 44 -34" stroke="#2563eb" stroke-width="11" stroke-linecap="round" fill="none" />
+                  <circle cx="45" cy="-36" r="6" fill="#fed7aa" />
+                  <circle cx="3" cy="-38" r="22" fill="#fed7aa" />
+                  <path d="M-18 -44 C-18 -64 24 -64 25 -42 C18 -50 -6 -52 -18 -44 Z" fill="#1e293b" />
+                  <rect x="-14" y="-45" width="34" height="11" rx="5" fill="#dc2626" />
+                  <circle cx="-4" cy="-40" r="2.8" fill="#ffffff" />
+                  <circle cx="11" cy="-40" r="2.8" fill="#ffffff" />
+                  <path d="M-3 -27 Q4 -21 11 -27" stroke="#7c2d12" stroke-width="2.5" stroke-linecap="round" fill="none" />
+                </g>
+              </g>
+
+              <g id="boy-rig" transform="translate(385, 292)">
+                <g id="boy-body">
+                  <g id="boy-sparkles" class="stage-transition" opacity="0">
+                    <polygon class="anim-sparkle" style="animation-delay:0s" points="-42,-48 -39,-41 -32,-38 -39,-35 -42,-28 -45,-35 -52,-38 -45,-41" fill="#fde047" />
+                    <polygon class="anim-sparkle" style="animation-delay:0.6s" points="42,-58 44,-52 50,-50 44,-48 42,-42 40,-48 34,-50 40,-52" fill="#fde047" />
+                    <circle class="anim-sparkle" style="animation-delay:1.1s" cx="38" cy="-16" r="3.5" fill="#38bdf8" />
+                  </g>
+                  <ellipse id="boy-shadow" class="stage-transition" cx="0" cy="84" rx="25" ry="6.5" fill="#000000" opacity="0.22" />
+                  <path id="boy-scarf" class="anim-cape stage-transition" d="M-10 -8 C-34 -4 -52 6 -62 20 C-42 20 -24 14 -6 6 Z" fill="#f97316" opacity="0" />
+                  <rect x="-11" y="34" width="10" height="32" rx="4" fill="#334155" />
+                  <rect x="4" y="34" width="10" height="32" rx="4" fill="#334155" />
+                  <rect x="-13" y="61" width="15" height="10" rx="5" fill="#ef4444" />
+                  <rect x="3" y="61" width="15" height="10" rx="5" fill="#ef4444" />
+                  <rect x="-16" y="-8" width="35" height="46" rx="12" fill="#f59e0b" />
+                  <path d="M-16 14 L19 14" stroke="#fef3c7" stroke-width="5" />
+                  <path id="boy-arm-left" d="M-14 0 Q-26 16 -22 30" stroke="#f59e0b" stroke-width="9" stroke-linecap="round" fill="none" />
+                  <path id="boy-arm-right" d="M17 0 Q29 16 25 30" stroke="#f59e0b" stroke-width="9" stroke-linecap="round" fill="none" />
+                  <circle cx="2" cy="-32" r="22" fill="#fed7aa" />
+                  <path d="M-19 -36 C-20 -58 22 -60 24 -36 C16 -46 6 -44 -2 -48 C-8 -44 -14 -44 -19 -36 Z" fill="#451a03" />
+                  <g id="face-neutro" class="stage-transition" opacity="1">
+                    <circle cx="-5" cy="-33" r="2.8" fill="#1e293b" />
+                    <circle cx="10" cy="-33" r="2.8" fill="#1e293b" />
+                    <line x1="-2" y1="-21" x2="8" y2="-21" stroke="#7c2d12" stroke-width="2.4" stroke-linecap="round" />
+                  </g>
+                  <g id="face-feliz" class="stage-transition" opacity="0">
+                    <circle cx="-11" cy="-26" r="4.2" fill="#fb7185" opacity="0.45" />
+                    <circle cx="16" cy="-26" r="4.2" fill="#fb7185" opacity="0.45" />
+                    <path d="M-9 -34 Q-5 -39 -1 -34" stroke="#1e293b" stroke-width="2.6" stroke-linecap="round" fill="none" />
+                    <path d="M6 -34 Q10 -39 14 -34" stroke="#1e293b" stroke-width="2.6" stroke-linecap="round" fill="none" />
+                    <path d="M-5 -24 Q3 -14 11 -24 Z" fill="#991b1b" />
+                  </g>
+                  <g id="face-triste" class="stage-transition" opacity="0">
+                    <line x1="-10" y1="-39" x2="-2" y2="-36" stroke="#451a03" stroke-width="2" stroke-linecap="round" />
+                    <line x1="15" y1="-39" x2="7" y2="-36" stroke="#451a03" stroke-width="2" stroke-linecap="round" />
+                    <circle cx="-5" cy="-32" r="2.6" fill="#1e293b" />
+                    <circle cx="10" cy="-32" r="2.6" fill="#1e293b" />
+                    <path d="M-3 -19 Q3 -25 9 -19" stroke="#7c2d12" stroke-width="2.4" stroke-linecap="round" fill="none" />
+                    <path class="anim-tear" d="M12 -28 Q15 -23 12 -20 Q9 -23 12 -28 Z" fill="#38bdf8" />
+                  </g>
+                </g>
+              </g>
+            </svg>
+            <div id="stage-caption" class="caption-bar">
+              Toque em "Simular narração", fale no microfone ou digite para começar a história...
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-pad stack">
+          <div class="row">
+            <button id="btn-mic" type="button" class="btn btn-primary">
+              <span>🎙️</span><span id="mic-label">Falar no microfone</span>
+            </button>
+            <button id="btn-demo" type="button" class="btn">
+              <span id="demo-label">▶ Simular narração ao vivo</span>
+            </button>
+            <span id="mic-status" class="muted"></span>
+          </div>
+
+          <div>
+            <label for="story-input" class="label">Transcrição / Texto da história (avaliação automática a cada 350 ms):</label>
+            <textarea id="story-input" rows="2" placeholder='Ex.: "e depois os dois foram pra cidade e anoiteceu e eles continuaram voando e o menino ficou muito feliz"'></textarea>
+          </div>
+
+          <div>
+            <div class="label">Frases rápidas para testar transições:</div>
+            <div class="row">
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Era uma vez um menino muito triste sozinho no quarto dele de dia">1. Menino triste no quarto</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="De repente um super-herói apareceu na janela e levou o menino voando para a floresta">2. Herói + voo na floresta</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="e depois os dois foram pra cidade e anoiteceu e eles continuaram voando e o menino ficou muito feliz">3. Seu exemplo (cidade à noite voando feliz)</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Começou uma chuva forte na cidade à noite e eles pousaram perto dos prédios">4. Chuva + pouso</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="O sol nasceu de manhã, parou de chover e o super-herói foi embora enquanto o menino voltou feliz para o quarto">5. Amanheceu no quarto</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="card">
+        <div class="tabs">
+          <button id="tab-btn-live" type="button" class="tab-btn active">Estado Jev ao vivo</button>
+          <button id="tab-btn-backend" type="button" class="tab-btn">Conectar Jev real</button>
+        </div>
+
+        <div id="tab-live" class="card-pad stack">
+          <div class="stack" style="gap:8px">
+            <div class="between">
+              <strong style="font-size:0.78rem">Choice (troca se confiança ≥ 0.70)</strong>
+              <span class="mono muted">confidence</span>
+            </div>
+            <div id="choice-list" class="stack" style="gap:8px"></div>
+          </div>
+
+          <hr class="divider" />
+
+          <div class="stack" style="gap:8px">
+            <div class="between">
+              <strong style="font-size:0.78rem">Noul (liga ≥ 0.75 / desliga ≤ 0.30)</strong>
+              <span class="mono muted">0.00–1.00</span>
+            </div>
+            <div id="noul-list" class="stack" style="gap:8px"></div>
+          </div>
+
+          <hr class="divider" />
+
+          <div class="stack" style="gap:6px">
+            <div class="between">
+              <strong style="font-size:0.78rem">Payload <code class="mono">system_one()</code></strong>
+              <span id="req-counter" class="mono muted">req #0</span>
+            </div>
+            <pre id="json-output" class="mono"></pre>
+          </div>
+        </div>
+
+        <div id="tab-backend" class="card-pad stack hidden">
+          <div class="metric-box stack" style="gap:8px">
+            <strong style="font-size:0.8rem">Backend Jev (FastAPI incluso em <code class="mono">server.py</code>)</strong>
+            <p class="muted" style="margin:0">
+              Se você rodar <code class="mono">uvicorn server:app</code> com <code class="mono">TYPESAFE_API_KEY</code> definida, a interface detecta <code class="mono">/api/evaluate</code> na mesma origem automaticamente — ou informe a URL abaixo:
+            </p>
+            <div>
+              <label for="backend-url" class="label">Endpoint POST:</label>
+              <input id="backend-url" type="url" value="/api/evaluate" class="mono" />
+            </div>
+            <label class="row" style="font-size:0.78rem; cursor:pointer">
+              <input id="use-real-api" type="checkbox" />
+              <span>Usar endpoint Jev real (fallback automático para simulador)</span>
+            </label>
+            <div id="backend-status" class="muted"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const INITIAL_STATE = {
+        cenario: "quarto",
+        periodo: "dia",
+        emocao_menino: "neutro",
+        heroi_presente: false,
+        personagens_voando: false,
+        chuva: false,
+      };
+
+      let storyState = { ...INITIAL_STATE };
+      let lastRawEval = null;
+      let requestCounter = 0;
+      let latestRequestId = 0;
+      let debounceTimer = null;
+      let demoTimer = null;
+      let isDemoRunning = false;
+      let soundEnabled = false;
+      let audioCtx = null;
+
+      const el = (id) => document.getElementById(id);
+
+      // Só ativa o endpoint /api/evaluate automaticamente se houver backend FastAPI respondendo em /api/health
+      if (window.location.protocol.startsWith("http")) {
+        fetch("/api/health")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data && data.jev_configured) {
+              el("use-real-api").checked = true;
+              el("mode-badge").textContent = "Jev real disponível";
+            }
+          })
+          .catch(() => {});
+      }
+
+      function ensureAudio() {
+        if (!soundEnabled) return null;
+        if (!audioCtx) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (Ctx) audioCtx = new Ctx();
+        }
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+        return audioCtx;
+      }
+
+      function playTone(freqs, duration = 0.35, type = "sine", gainPeak = 0.06) {
+        const ctx = ensureAudio();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        freqs.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+          gain.gain.setValueAtTime(0.0001, now + idx * 0.06);
+          gain.gain.exponentialRampToValueAtTime(gainPeak, now + idx * 0.06 + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.06 + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.06);
+          osc.stop(now + idx * 0.06 + duration + 0.02);
+        });
+      }
+
+      function playWhoosh() {
+        const ctx = ensureAudio();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const bufferSize = Math.floor(ctx.sampleRate * 0.45);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.4;
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(280, now);
+        filter.frequency.exponentialRampToValueAtTime(1100, now + 0.22);
+        filter.frequency.exponentialRampToValueAtTime(320, now + 0.44);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.44);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        noise.start(now);
+      }
+
+      function normalize(str) {
+        return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      }
+
+      function lastMatchIndex(text, patterns) {
+        let best = -1;
+        for (const p of patterns) {
+          const rx = new RegExp(p, "g");
+          let m;
+          while ((m = rx.exec(text)) !== null) {
+            if (m.index > best) best = m.index;
+          }
+        }
+        return best;
+      }
+
+      function simulateJevSystemOne(falaRecente, estadoAtual) {
+        const t = normalize(falaRecente);
+
+        const cen = {
+          floresta: lastMatchIndex(t, ["floresta", "mata", "arvore", "arvores", "bosque", "natureza", "selva"]),
+          cidade: lastMatchIndex(t, ["cidade", "predio", "predios", "rua", "ruas", "urbano", "avenida", "centro"]),
+          quarto: lastMatchIndex(t, ["quarto", "cama", "casa", "abajur", "estante"]),
+        };
+        let cenario = estadoAtual.cenario;
+        let cenarioConf = 0.54;
+        if (Math.max(cen.floresta, cen.cidade, cen.quarto) >= 0) {
+          cenario = Object.entries(cen).sort((a, b) => b[1] - a[1])[0][0];
+          cenarioConf = 0.94;
+        }
+
+        const diaIdx = lastMatchIndex(t, ["\\bdia\\b", "manha", "amanheceu", "sol nasceu", "ensolarado", "claro", "\\bsol\\b"]);
+        const noiteIdx = lastMatchIndex(t, ["noite", "anoiteceu", "escuro", "estrelas", "\\blua\\b", "meia-noite", "madrugada"]);
+        let periodo = estadoAtual.periodo;
+        let periodoConf = 0.56;
+        if (diaIdx >= 0 || noiteIdx >= 0) {
+          periodo = noiteIdx >= diaIdx ? "noite" : "dia";
+          periodoConf = 0.96;
+        }
+
+        const felizIdx = lastMatchIndex(t, ["feliz", "alegre", "sorrindo", "sorriu", "empolgado", "animado", "rindo", "contente"]);
+        const tristeIdx = lastMatchIndex(t, ["triste", "chorando", "chorou", "sozinho", "solitario", "cabisbaixo", "chateado", "medo"]);
+        const neutroIdx = lastMatchIndex(t, ["calmo", "neutro", "normal", "tranquilo"]);
+        let emocao = estadoAtual.emocao_menino;
+        let emocaoConf = 0.52;
+        const maxEmo = Math.max(felizIdx, tristeIdx, neutroIdx);
+        if (maxEmo >= 0) {
+          emocao = felizIdx === maxEmo ? "feliz" : (tristeIdx === maxEmo ? "triste" : "neutro");
+          emocaoConf = 0.95;
+        }
+
+        const heroiOn = lastMatchIndex(t, ["super-heroi", "super heroi", "superheroi", "\\bheroi\\b", "os dois", "juntos"]);
+        const heroiOff = lastMatchIndex(t, ["heroi foi embora", "sem heroi", "heroi sumiu", "heroi partiu", "despediu", "sozinho"]);
+        let heroiProb = estadoAtual.heroi_presente ? 0.62 : 0.08;
+        if (heroiOn >= 0 || heroiOff >= 0) heroiProb = heroiOff > heroiOn ? 0.06 : 0.97;
+
+        const vooOn = lastMatchIndex(t, ["voando", "voar", "voaram", "voou", "no ceu", "pelas nuvens", "levitando", "flutuando"]);
+        const vooOff = lastMatchIndex(t, ["pousaram", "pousou", "aterrissou", "no chao", "desceram", "caminhando", "andando", "voltou", "deitou"]);
+        let vooProb = estadoAtual.personagens_voando ? 0.58 : 0.07;
+        if (vooOn >= 0 || vooOff >= 0) vooProb = vooOff > vooOn ? 0.09 : 0.98;
+
+        const chuvaOn = lastMatchIndex(t, ["chuva", "chovendo", "chover", "tempestade", "temporal"]);
+        const chuvaOff = lastMatchIndex(t, ["parou de chover", "sem chuva", "sol nasceu", "ceu limpo", "abriu o sol"]);
+        let chuvaProb = estadoAtual.chuva ? 0.55 : 0.05;
+        if (chuvaOn >= 0 || chuvaOff >= 0) chuvaProb = chuvaOff > chuvaOn ? 0.06 : 0.95;
+
+        return {
+          mode: "simulator",
+          model: "jev-latest (simulado localmente)",
+          choices: {
+            cenario: { choice: cenario, confidence: cenarioConf },
+            periodo: { choice: periodo, confidence: periodoConf },
+            emocao_menino: { choice: emocao, confidence: emocaoConf },
+          },
+          nouls: {
+            heroi_presente: { noul: heroiProb },
+            personagens_voando: { noul: vooProb },
+            chuva: { noul: chuvaProb },
+          },
+        };
+      }
+
+      function applyEvaluation(raw) {
+        const prev = { ...storyState };
+        const decisions = { choices: {}, nouls: {} };
+
+        for (const key of ["cenario", "periodo", "emocao_menino"]) {
+          const item = raw.choices[key];
+          const accepted = item.confidence >= 0.70;
+          if (accepted) storyState[key] = item.choice;
+          decisions.choices[key] = {
+            applied: storyState[key],
+            confidence: item.confidence,
+            status: accepted ? "aplicado" : "mantido (< 0.70)",
+          };
+        }
+
+        for (const key of ["heroi_presente", "personagens_voando", "chuva"]) {
+          const p = raw.nouls[key].noul;
+          let status = "histerese (mantido)";
+          if (p >= 0.75) { storyState[key] = true; status = "ATIVO (≥ 0.75)"; }
+          else if (p <= 0.30) { storyState[key] = false; status = "INATIVO (≤ 0.30)"; }
+          decisions.nouls[key] = { noul: p, active: storyState[key], status };
+        }
+
+        if (!prev.heroi_presente && storyState.heroi_presente) {
+          playTone([523.25, 659.25, 783.99, 1046.5], 0.32, "triangle", 0.055);
+        } else if (!prev.personagens_voando && storyState.personagens_voando) {
+          playWhoosh();
+        } else if (prev.cenario !== storyState.cenario || prev.periodo !== storyState.periodo) {
+          playTone(storyState.periodo === "noite" ? [392, 329.63] : [440, 554.37], 0.38, "sine", 0.045);
+        }
+
+        lastRawEval = { raw, decisions };
+        renderStage();
+        renderInspector();
+      }
+
+      function renderStage() {
+        const s = storyState;
+        const isNight = s.periodo === "noite";
+
+        el("sky-night-rect").setAttribute("opacity", isNight ? "1" : "0");
+        el("celestial-day").setAttribute("opacity", isNight ? "0" : "1");
+        el("celestial-night").setAttribute("opacity", isNight ? "1" : "0");
+
+        el("scene-floresta").setAttribute("opacity", s.cenario === "floresta" ? "1" : "0");
+        el("scene-cidade").setAttribute("opacity", s.cenario === "cidade" ? "1" : "0");
+        el("scene-quarto").setAttribute("opacity", s.cenario === "quarto" ? "1" : "0");
+
+        el("forest-fireflies").setAttribute("opacity", s.cenario === "floresta" && isNight ? "1" : "0");
+        el("forest-night-tint").setAttribute("opacity", s.cenario === "floresta" && isNight ? "0.42" : "0");
+        el("city-lights").setAttribute("opacity", s.cenario === "cidade" && isNight ? "1" : "0");
+        el("room-night-tint").setAttribute("opacity", s.cenario === "quarto" && isNight ? "0.45" : "0");
+        el("room-lamp-glow").setAttribute("opacity", s.cenario === "quarto" && isNight ? "1" : "0");
+
+        el("layer-speed-lines").setAttribute("opacity", s.personagens_voando ? "0.85" : "0");
+        el("layer-rain").setAttribute("opacity", s.chuva ? (s.cenario === "quarto" ? "0.28" : "0.9") : "0");
+
+        const boyRig = el("boy-rig");
+        const boyX = s.heroi_presente ? (s.personagens_voando ? 335 : 350) : 395;
+        const boyY = s.personagens_voando ? 172 : (s.cenario === "cidade" ? 314 : 292);
+        boyRig.setAttribute("transform", `translate(${boyX}, ${boyY})`);
+        boyRig.classList.toggle("is-flying", s.personagens_voando);
+        boyRig.classList.toggle("is-happy", s.emocao_menino === "feliz");
+
+        el("boy-shadow").setAttribute("opacity", s.personagens_voando ? "0" : "0.22");
+        el("boy-scarf").setAttribute("opacity", s.personagens_voando ? "1" : "0");
+        el("boy-sparkles").setAttribute("opacity", s.emocao_menino === "feliz" ? "1" : "0");
+
+        el("face-neutro").setAttribute("opacity", s.emocao_menino === "neutro" ? "1" : "0");
+        el("face-feliz").setAttribute("opacity", s.emocao_menino === "feliz" ? "1" : "0");
+        el("face-triste").setAttribute("opacity", s.emocao_menino === "triste" ? "1" : "0");
+
+        if (s.personagens_voando) {
+          el("boy-arm-left").setAttribute("d", "M-14 0 Q-30 -6 -36 -18");
+          el("boy-arm-right").setAttribute("d", "M17 0 Q34 -12 42 -24");
+        } else if (s.emocao_menino === "feliz") {
+          el("boy-arm-left").setAttribute("d", "M-14 0 Q-28 -14 -26 -26");
+          el("boy-arm-right").setAttribute("d", "M17 0 Q32 -14 30 -26");
+        } else {
+          el("boy-arm-left").setAttribute("d", "M-14 0 Q-24 18 -20 32");
+          el("boy-arm-right").setAttribute("d", "M17 0 Q27 18 23 32");
+        }
+
+        const heroRig = el("hero-rig");
+        if (s.heroi_presente) {
+          const heroX = s.personagens_voando ? 470 : 485;
+          const heroY = s.personagens_voando ? 152 : (s.cenario === "cidade" ? 304 : 280);
+          heroRig.setAttribute("transform", `translate(${heroX}, ${heroY})`);
+          heroRig.setAttribute("opacity", "1");
+          heroRig.classList.toggle("is-flying", s.personagens_voando);
+          heroRig.classList.toggle("is-standing", !s.personagens_voando);
+        } else {
+          heroRig.setAttribute("transform", "translate(880, 120)");
+          heroRig.setAttribute("opacity", "0");
+          heroRig.classList.remove("is-flying", "is-standing");
+        }
+        el("hero-shadow").setAttribute("opacity", s.personagens_voando ? "0" : "0.24");
+        el("hero-flight-trail").setAttribute("opacity", s.personagens_voando && s.heroi_presente ? "0.9" : "0");
+
+        const cenMap = { quarto: "🏠 Quarto", floresta: "🌲 Floresta", cidade: "🏙️ Cidade" };
+        const emoMap = { neutro: "😐 Neutro", feliz: "😄 Feliz", triste: "😢 Triste" };
+        el("pill-cenario").textContent = cenMap[s.cenario] || s.cenario;
+        el("pill-periodo").textContent = isNight ? "🌙 Noite" : "☀️ Dia";
+        el("pill-emocao").textContent = emoMap[s.emocao_menino] || s.emocao_menino;
+        el("pill-heroi").textContent = s.heroi_presente ? "🦸 Herói presente" : "Herói: fora";
+        el("pill-voo").textContent = s.personagens_voando ? "✨ Voando" : "No chão";
+      }
+
+      function renderInspector() {
+        const choiceContainer = el("choice-list");
+        const noulContainer = el("noul-list");
+
+        if (!lastRawEval) {
+          choiceContainer.innerHTML = `<div class="muted">Aguardando fala ou texto...</div>`;
+          noulContainer.innerHTML = `<div class="muted">Aguardando fala ou texto...</div>`;
+          el("json-output").textContent = JSON.stringify({ estado_atual: storyState }, null, 2);
+          return;
+        }
+
+        const { raw, decisions } = lastRawEval;
+
+        choiceContainer.innerHTML = Object.entries(decisions.choices).map(([key, d]) => {
+          const pct = Math.round(d.confidence * 100);
+          const applied = d.confidence >= 0.70;
+          return `
+            <div class="metric-box">
+              <div class="between" style="font-size:0.76rem">
+                <span class="mono" style="font-weight:600">${key}</span>
+                <div class="row" style="gap:6px">
+                  <span class="pill">${d.applied}</span>
+                  <span class="mono muted">${d.confidence.toFixed(2)}</span>
+                </div>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width:${pct}%; background:${applied ? 'var(--primary)' : 'var(--muted)'}"></div>
+                <div class="marker" style="left:70%; background:var(--warning)" title="Limiar 0.70"></div>
+              </div>
+              <div class="muted">${d.status}</div>
+            </div>
+          `;
+        }).join("");
+
+        noulContainer.innerHTML = Object.entries(decisions.nouls).map(([key, d]) => {
+          const pct = Math.round(d.noul * 100);
+          return `
+            <div class="metric-box">
+              <div class="between" style="font-size:0.76rem">
+                <span class="mono" style="font-weight:600">${key}</span>
+                <div class="row" style="gap:6px">
+                  <span style="font-size:0.73rem; font-weight:600; color:${d.active ? 'var(--success)' : 'var(--muted)'}">${d.status}</span>
+                  <span class="mono muted">${d.noul.toFixed(2)}</span>
+                </div>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width:${pct}%; background:${d.active ? 'var(--success)' : 'var(--muted)'}"></div>
+                <div class="marker" style="left:30%; background:var(--error)" title="Desliga ≤ 0.30"></div>
+                <div class="marker" style="left:75%; background:var(--success)" title="Liga ≥ 0.75"></div>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        el("json-output").textContent = JSON.stringify({
+          model: raw.model || "jev-latest",
+          choices: raw.choices,
+          nouls: raw.nouls,
+        }, null, 2);
+      }
+
+      async function evaluateText(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+
+        const myReqId = ++latestRequestId;
+        requestCounter += 1;
+        el("req-counter").textContent = `req #${requestCounter}`;
+        el("stage-caption").textContent = trimmed;
+
+        const useReal = el("use-real-api").checked;
+        const endpoint = el("backend-url").value.trim();
+        const t0 = performance.now();
+
+        let result = null;
+        if (useReal && endpoint) {
+          try {
+            const resp = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fala_recente: trimmed, estado_atual: storyState }),
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            result = await resp.json();
+            el("mode-badge").textContent = result.mode === "jev" ? "Jev real conectado" : "Simulador (backend sem chave)";
+            el("backend-status").textContent = result.mode === "jev" ? "Conectado ao Jev real." : "Backend ativo em modo simulador (defina TYPESAFE_API_KEY).";
+          } catch (err) {
+            el("backend-status").textContent = `Endpoint indisponível (${err.message}) — usando simulador local.`;
+            el("mode-badge").textContent = "Simulador local do contrato Jev";
+            result = simulateJevSystemOne(trimmed, storyState);
+          }
+        } else {
+          await new Promise((r) => setTimeout(r, 40));
+          result = simulateJevSystemOne(trimmed, storyState);
+        }
+
+        if (myReqId !== latestRequestId) return;
+        el("latency-readout").textContent = `${Math.round(performance.now() - t0)} ms`;
+        applyEvaluation(result);
+      }
+
+      function scheduleEvaluation(text, delay = 350) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => evaluateText(text), delay);
+      }
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recognition = null;
+      let isListening = false;
+
+      function stopMic() {
+        isListening = false;
+        if (recognition) { try { recognition.stop(); } catch (_) {} }
+        el("btn-mic").classList.remove("mic-recording");
+        el("mic-label").textContent = "Falar no microfone";
+        el("mic-status").textContent = "";
+      }
+
+      function startMic() {
+        if (!SpeechRecognition) {
+          el("mic-status").textContent = "Web Speech API indisponível neste navegador — use a simulação ou digite.";
+          return;
+        }
+        stopDemo();
+        recognition = new SpeechRecognition();
+        recognition.lang = "pt-BR";
+        recognition.continuous = true;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+          isListening = true;
+          el("btn-mic").classList.add("mic-recording");
+          el("mic-label").textContent = "Parar microfone";
+          el("mic-status").textContent = "Ouvindo em pt-BR...";
+        };
+
+        recognition.onresult = (event) => {
+          let transcript = "";
+          const startIdx = Math.max(0, event.results.length - 3);
+          for (let i = startIdx; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript + " ";
+          }
+          transcript = transcript.trim();
+          el("story-input").value = transcript;
+          el("stage-caption").textContent = transcript;
+          scheduleEvaluation(transcript, 320);
+        };
+
+        recognition.onerror = (event) => {
+          el("mic-status").textContent = event.error === "not-allowed"
+            ? "Permissão de microfone bloqueada (HTTPS obrigatório no celular)."
+            : `Microfone: ${event.error}`;
+          stopMic();
+        };
+
+        recognition.onend = () => { if (isListening) stopMic(); };
+        try { recognition.start(); } catch (_) { stopMic(); }
+      }
+
+      const DEMO_STEPS = [
+        "Era uma vez um menino muito triste sozinho no quarto dele de dia",
+        "De repente um super-herói apareceu na janela e chamou ele para voar",
+        "Os dois saíram voando bem alto por cima de uma floresta enorme",
+        "e depois os dois foram pra cidade e anoiteceu e eles continuaram voando e o menino ficou muito feliz",
+        "Começou uma chuva leve sobre os prédios iluminados da cidade",
+      ];
+
+      function stopDemo() {
+        isDemoRunning = false;
+        clearTimeout(demoTimer);
+        el("demo-label").textContent = "▶ Simular narração ao vivo";
+      }
+
+      function runDemo() {
+        if (isDemoRunning) { stopDemo(); return; }
+        stopMic();
+        storyState = { ...INITIAL_STATE };
+        renderStage();
+        isDemoRunning = true;
+        el("demo-label").textContent = "⏹ Parar simulação";
+
+        let stepIdx = 0;
+        let wordIdx = 0;
+        let words = DEMO_STEPS[0].split(" ");
+
+        function tick() {
+          if (!isDemoRunning) return;
+          wordIdx += 1;
+          const partial = words.slice(0, wordIdx).join(" ");
+          el("story-input").value = partial;
+          el("stage-caption").textContent = partial;
+          if (wordIdx % 3 === 0 || wordIdx === words.length) evaluateText(partial);
+
+          if (wordIdx < words.length) {
+            demoTimer = setTimeout(tick, 185);
+          } else {
+            stepIdx += 1;
+            if (stepIdx < DEMO_STEPS.length) {
+              words = DEMO_STEPS[stepIdx].split(" ");
+              wordIdx = 0;
+              demoTimer = setTimeout(tick, 1650);
+            } else {
+              stopDemo();
+            }
+          }
+        }
+        tick();
+      }
+
+      el("btn-mic").addEventListener("click", () => isListening ? stopMic() : startMic());
+      el("btn-demo").addEventListener("click", runDemo);
+      el("story-input").addEventListener("input", (e) => {
+        stopDemo();
+        const val = e.target.value;
+        el("stage-caption").textContent = val || "Digite ou fale para transformar a cena...";
+        scheduleEvaluation(val, 350);
+      });
+
+      document.querySelectorAll(".phrase-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          stopDemo();
+          const phrase = btn.getAttribute("data-phrase");
+          el("story-input").value = phrase;
+          evaluateText(phrase);
+        });
+      });
+
+      el("btn-reset").addEventListener("click", () => {
+        stopDemo();
+        stopMic();
+        storyState = { ...INITIAL_STATE };
+        lastRawEval = null;
+        el("story-input").value = "";
+        el("stage-caption").textContent = "Cena reiniciada. Fale, digite ou clique em 'Simular narração ao vivo'.";
+        el("latency-readout").textContent = "Pronto";
+        renderStage();
+        renderInspector();
+      });
+
+      el("btn-sound").addEventListener("click", () => {
+        soundEnabled = !soundEnabled;
+        el("sound-icon").textContent = soundEnabled ? "🔊" : "🔇";
+        el("sound-label").textContent = soundEnabled ? "Som on" : "Som off";
+        if (soundEnabled) playTone([523.25, 659.25], 0.25, "sine", 0.04);
+      });
+
+      function setTab(name) {
+        const isLive = name === "live";
+        el("tab-live").classList.toggle("hidden", !isLive);
+        el("tab-backend").classList.toggle("hidden", isLive);
+        el("tab-btn-live").classList.toggle("active", isLive);
+        el("tab-btn-backend").classList.toggle("active", !isLive);
+      }
+      el("tab-btn-live").addEventListener("click", () => setTab("live"));
+      el("tab-btn-backend").addEventListener("click", () => setTab("backend"));
+
+      renderStage();
+      renderInspector();
+    })();
+  </script>
+</body>
+</html>
