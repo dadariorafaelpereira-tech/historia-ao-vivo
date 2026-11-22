@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1020" />
-  <title>História ao Vivo — Voz + Jev</title>
+  <title>História ao Vivo — Voz + Gemini Decision 1</title>
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
   <link rel="manifest" href="./manifest.json" />
   <style>
@@ -281,7 +281,7 @@
     <header>
       <div>
         <div class="title-row">
-          <h1>História ao Vivo — Voz + Jev</h1>
+          <h1>História ao Vivo — Gemini Decision 1</h1>
           <span id="mode-badge" class="badge">Simulador local</span>
         </div>
         <p class="subtitle">
@@ -809,8 +809,8 @@
 
       <aside class="card">
         <div class="tabs">
-          <button id="tab-btn-live" type="button" class="tab-btn active">Estado Jev ao vivo</button>
-          <button id="tab-btn-backend" type="button" class="tab-btn">Conexão Jev</button>
+          <button id="tab-btn-live" type="button" class="tab-btn active">Decisões ao vivo</button>
+          <button id="tab-btn-backend" type="button" class="tab-btn">Conexão Google</button>
         </div>
 
         <div id="tab-live" class="card-pad stack">
@@ -832,7 +832,7 @@
           <hr class="divider" />
           <div class="stack" style="gap:6px">
             <div class="between">
-              <strong style="font-size:0.77rem">Resposta <code class="mono">system_one()</code></strong>
+              <strong style="font-size:0.77rem">Resposta <code class="mono">decisions.create()</code></strong>
               <span id="req-counter" class="mono muted">req #0</span>
             </div>
             <pre id="json-output" class="mono"></pre>
@@ -841,15 +841,19 @@
 
         <div id="tab-backend" class="card-pad stack hidden">
           <div class="metric-box stack" style="gap:8px">
-            <strong style="font-size:0.8rem">Status do servidor Jev</strong>
+            <strong style="font-size:0.8rem">Status do servidor Gemini Decision 1</strong>
             <p id="backend-status" class="muted" style="margin:0">Verificando /api/health...</p>
             <div>
-              <label for="backend-url" class="label">Endpoint POST do backend Jev:</label>
+              <label for="backend-url" class="label">Endpoint POST de texto:</label>
               <input id="backend-url" type="url" value="/api/evaluate" class="mono" />
             </div>
             <label class="row" style="font-size:0.78rem; cursor:pointer">
               <input id="use-real-api" type="checkbox" />
-              <span>Usar Jev real (com fallback automático para simulador)</span>
+              <span>Usar Gemini Decision 1 real (fallback automático para simulador)</span>
+            </label>
+            <label class="row" style="font-size:0.78rem; cursor:pointer">
+              <input id="use-direct-audio" type="checkbox" />
+              <span>Enviar áudio direto do microfone para o Gemini (recomendado no iPhone)</span>
             </label>
           </div>
         </div>
@@ -885,24 +889,29 @@
 
       const el = (id) => document.getElementById(id);
 
-      // Detecta automaticamente se está rodando atrás do server.py com TYPESAFE_API_KEY
+      // Detecta automaticamente se está rodando no Cloud Run / FastAPI com GEMINI_API_KEY
       if (window.location.protocol.startsWith("http")) {
         fetch("/api/health")
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
-            if (data && data.jev_configured) {
+            if (data && data.gemini_configured) {
               el("use-real-api").checked = true;
-              el("mode-badge").textContent = "Jev real ativo";
+              el("use-direct-audio").checked = Boolean(data.audio_supported);
+              el("mode-badge").textContent = "Gemini Decision 1 ativo";
               el("mode-badge").classList.add("badge-live");
-              el("backend-status").textContent = "Servidor conectado com TYPESAFE_API_KEY ativa (jev-latest).";
+              el("backend-status").textContent =
+                "Conectado ao Google Gemini Decision 1 (texto + áudio direto ativos).";
             } else if (data && data.ok) {
-              el("backend-status").textContent = "Servidor ativo, mas TYPESAFE_API_KEY ainda não foi configurada — usando simulador local.";
+              el("backend-status").textContent =
+                "Servidor ativo, mas GEMINI_API_KEY ainda não foi configurada — usando simulador local.";
             } else {
-              el("backend-status").textContent = "Hospedagem estática (sem backend Python) — usando simulador local.";
+              el("backend-status").textContent =
+                "Hospedagem estática (GitHub Pages) — usando simulador local.";
             }
           })
           .catch(() => {
-            el("backend-status").textContent = "Modo estático (sem backend conectado) — usando simulador local.";
+            el("backend-status").textContent =
+              "Modo estático (sem backend conectado) — usando simulador local.";
           });
       }
 
@@ -974,7 +983,7 @@
         return best;
       }
 
-      function simulateJevSystemOne(falaRecente, estadoAtual) {
+      function simulateDecisionModel(falaRecente, estadoAtual) {
         const t = normalize(falaRecente);
 
         const cen = {
@@ -1036,7 +1045,7 @@
 
         return {
           mode: "simulator",
-          model: "jev-latest (simulado localmente)",
+          model: "gemini-decision-1 (simulado localmente)",
           choices: {
             cenario: { choice: cenario, confidence: cenarioConf },
             periodo: { choice: periodo, confidence: periodoConf },
@@ -1058,19 +1067,20 @@
       const CHOICE_KEYS = ["cenario", "periodo", "protagonista", "emocao"];
       const NOUL_KEYS = ["heroi_presente", "animal_presente", "dragao_presente", "personagens_voando", "chuva", "neve", "arco_iris"];
 
-      function applyEvaluation(raw) {
+      function applyEvaluation(raw, captionOverride = null) {
         const prev = { ...storyState };
         const decisions = { choices: {}, nouls: {} };
 
         for (const key of CHOICE_KEYS) {
           const item = raw.choices && raw.choices[key];
           if (!item) continue;
-          const accepted = item.confidence >= 0.70;
+          const keep = Boolean(item.keep_current) || !item.choice;
+          const accepted = !keep && item.confidence >= 0.70;
           if (accepted) storyState[key] = item.choice;
           decisions.choices[key] = {
             applied: storyState[key],
-            confidence: item.confidence,
-            status: accepted ? "aplicado" : "mantido (< 0.70)",
+            confidence: keep ? 0.0 : item.confidence,
+            status: keep ? "sem mudança (mantido)" : (accepted ? "aplicado" : "mantido (< 0.70)"),
           };
         }
 
@@ -1099,6 +1109,7 @@
         lastRawEval = { raw, decisions };
         renderStage();
         renderInspector();
+        if (captionOverride) el("stage-caption").textContent = captionOverride;
       }
 
       function renderStage() {
@@ -1285,6 +1296,7 @@
           mode: raw.mode,
           model: raw.model,
           server_ms: raw.server_ms,
+          usage: raw.usage,
           choices: raw.choices,
           nouls: raw.nouls,
         }, null, 2);
@@ -1293,7 +1305,6 @@
       async function evaluateText(text) {
         const trimmed = text.trim();
         if (!trimmed) return;
-        // Janela deslizante das últimas 35 palavras para manter resposta ultrarrápida
         const words = trimmed.split(/\s+/);
         const recentWindow = words.slice(-35).join(" ");
 
@@ -1316,23 +1327,51 @@
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             result = await resp.json();
-            el("mode-badge").textContent = "Jev real ativo";
+            el("mode-badge").textContent = "Gemini Decision 1 ativo";
             el("mode-badge").classList.add("badge-live");
           } catch (err) {
             el("backend-status").textContent = `Erro no backend (${err.message}) — usando simulador local.`;
             el("mode-badge").textContent = "Simulador (fallback)";
             el("mode-badge").classList.remove("badge-live");
-            result = simulateJevSystemOne(recentWindow, storyState);
+            result = simulateDecisionModel(recentWindow, storyState);
           }
         } else {
           await new Promise((r) => setTimeout(r, 35));
-          result = simulateJevSystemOne(recentWindow, storyState);
+          result = simulateDecisionModel(recentWindow, storyState);
         }
 
         if (myReqId !== latestRequestId) return;
         const ms = Math.round(performance.now() - t0);
-        el("latency-readout").textContent = result.server_ms ? `${ms} ms (Jev: ${result.server_ms} ms)` : `${ms} ms`;
+        el("latency-readout").textContent = result.server_ms ? `${ms} ms (Gemini: ${result.server_ms} ms)` : `${ms} ms`;
         applyEvaluation(result);
+      }
+
+      async function evaluateAudioBlob(blob) {
+        if (!blob || blob.size < 1200) return;
+        const myReqId = ++latestRequestId;
+        requestCounter += 1;
+        el("req-counter").textContent = `req #${requestCounter}`;
+        const t0 = performance.now();
+
+        const form = new FormData();
+        const ext = blob.type.includes("mp4") ? "m4a" : "webm";
+        form.append("audio", blob, `fala.${ext}`);
+        form.append("estado_atual", JSON.stringify(storyState));
+
+        try {
+          const resp = await fetch("/api/evaluate-audio", { method: "POST", body: form });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const result = await resp.json();
+          if (myReqId !== latestRequestId) return;
+          const ms = Math.round(performance.now() - t0);
+          el("latency-readout").textContent = `${ms} ms (áudio → Gemini: ${result.server_ms} ms)`;
+          el("mode-badge").textContent = "Gemini Decision 1 (áudio)";
+          el("mode-badge").classList.add("badge-live");
+          applyEvaluation(result);
+          el("stage-caption").textContent = `🎙️ ${el("pill-cenario").textContent} · ${el("pill-periodo").textContent} · ${el("pill-emocao").textContent} · ${el("pill-extras").textContent}`;
+        } catch (err) {
+          el("mic-status").textContent = `Erro no áudio (${err.message})`;
+        }
       }
 
       function scheduleEvaluation(text, delay = 350) {
@@ -1340,22 +1379,106 @@
         debounceTimer = setTimeout(() => evaluateText(text), delay);
       }
 
-      // Microfone com retomada suave para Safari/iOS e Chrome
+      // Microfone híbrido:
+      // - Quando Gemini Decision 1 está ativo: grava trechos completos de ~2.8s (MP4 no iPhone / WebM no Android) e envia direto para /api/evaluate-audio!
+      // - Em modo estático (sem backend): usa Web Speech API (pt-BR).
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let recognition = null;
       let wantListening = false;
+      let mediaStream = null;
+      let mediaRecorder = null;
+      let clipTimer = null;
+
+      function pickAudioMimeType() {
+        if (typeof MediaRecorder === "undefined") return "";
+        const candidates = [
+          "audio/mp4",
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/ogg;codecs=opus",
+        ];
+        for (const c of candidates) {
+          if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+        }
+        return "";
+      }
 
       function stopMic() {
         wantListening = false;
+        clearTimeout(clipTimer);
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          try { mediaRecorder.stop(); } catch (_) {}
+        }
+        mediaRecorder = null;
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((tr) => tr.stop());
+          mediaStream = null;
+        }
         if (recognition) { try { recognition.stop(); } catch (_) {} }
         el("btn-mic").classList.remove("mic-recording");
         el("mic-label").textContent = "Falar no microfone";
         el("mic-status").textContent = "";
       }
 
-      function startMic() {
+      function recordNextAudioClip() {
+        if (!wantListening || !mediaStream) return;
+        const mimeType = pickAudioMimeType();
+        const opts = mimeType ? { mimeType } : undefined;
+        const chunks = [];
+        let recorder;
+        try {
+          recorder = new MediaRecorder(mediaStream, opts);
+          mediaRecorder = recorder;
+        } catch (err) {
+          el("mic-status").textContent = "MediaRecorder indisponível — usando ditado do navegador.";
+          stopMic();
+          startSpeechMic();
+          return;
+        }
+
+        recorder.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+        };
+
+        recorder.onstop = () => {
+          const finalMime = recorder.mimeType || mimeType || "audio/webm";
+          const blob = new Blob(chunks, { type: finalMime });
+          evaluateAudioBlob(blob);
+          if (wantListening) recordNextAudioClip();
+        };
+
+        recorder.start();
+        clipTimer = setTimeout(() => {
+          if (recorder.state === "recording") {
+            recorder.stop();
+          }
+        }, 2800);
+      }
+
+      async function startDirectAudioMic() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+          startSpeechMic();
+          return;
+        }
+        stopDemo();
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+          el("mic-status").textContent = "Permissão de microfone negada (confira HTTPS e permissões do Safari/Chrome).";
+          stopMic();
+          return;
+        }
+        wantListening = true;
+        el("btn-mic").classList.add("mic-recording");
+        el("mic-label").textContent = "Parar microfone";
+        el("mic-status").textContent = "Enviando áudio direto ao Gemini Decision 1...";
+        el("stage-caption").textContent = "🎙️ Ouvindo sua história ao vivo (atualiza a cada ~3s)...";
+        recordNextAudioClip();
+      }
+
+      function startSpeechMic() {
         if (!SpeechRecognition) {
-          el("mic-status").textContent = "Microfone contínuo indisponível neste navegador — digite ou use o Chrome/Safari.";
+          el("mic-status").textContent = "Microfone contínuo indisponível neste navegador — digite ou conecte o backend Gemini.";
           return;
         }
         stopDemo();
@@ -1392,13 +1515,20 @@
         };
 
         recognition.onend = () => {
-          // No iOS/Safari o reconhecimento pode encerrar após pausa; reinicia enquanto o botão estiver ativo
           if (wantListening) {
             try { recognition.start(); } catch (_) { stopMic(); }
           }
         };
 
         try { recognition.start(); } catch (_) { stopMic(); }
+      }
+
+      function startMic() {
+        if (el("use-real-api").checked && el("use-direct-audio").checked) {
+          startDirectAudioMic();
+        } else {
+          startSpeechMic();
+        }
       }
 
       const DEMO_STEPS = [
