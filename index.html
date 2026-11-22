@@ -782,6 +782,11 @@
             <button id="btn-mic" type="button" class="btn btn-primary">
               <span>🎙️</span><span id="mic-label">Falar no microfone</span>
             </button>
+            <div id="vu-wrap" class="hidden" style="display:flex;align-items:center;gap:6px" title="Nível de voz captado">
+              <div style="width:54px;height:8px;border-radius:999px;background:var(--surface);border:1px solid var(--border);overflow:hidden">
+                <div id="vu-bar" style="height:100%;width:0%;background:var(--success);transition:width 80ms linear"></div>
+              </div>
+            </div>
             <button id="btn-demo" type="button" class="btn">
               <span id="demo-label">▶ Simular história</span>
             </button>
@@ -790,7 +795,7 @@
           </div>
 
           <div>
-            <label for="story-input" class="label">Fala / texto ao vivo (avaliado em ~350 ms):</label>
+            <label for="story-input" class="label">Fala / texto ao vivo (ou use o microfone acima):</label>
             <textarea id="story-input" rows="2" placeholder='Conte qualquer história: "A menina foi para a praia ao pôr do sol com o cachorrinho e apareceu um dragão voando com arco-íris..."'></textarea>
           </div>
 
@@ -816,7 +821,7 @@
         <div id="tab-live" class="card-pad stack">
           <div class="stack" style="gap:7px">
             <div class="between">
-              <strong style="font-size:0.77rem">Choice (troca se confiança ≥ 0.70)</strong>
+              <strong style="font-size:0.77rem">Cenário / Clima / Emoção (≥ 0.65)</strong>
               <span class="mono muted">confidence</span>
             </div>
             <div id="choice-list" class="stack" style="gap:7px"></div>
@@ -824,8 +829,8 @@
           <hr class="divider" />
           <div class="stack" style="gap:7px">
             <div class="between">
-              <strong style="font-size:0.77rem">Noul (liga ≥ 0.75 / desliga ≤ 0.30)</strong>
-              <span class="mono muted">0.00–1.00</span>
+              <strong style="font-size:0.77rem">Elementos (ativar / desativar / manter)</strong>
+              <span class="mono muted">confidence</span>
             </div>
             <div id="noul-list" class="stack" style="gap:7px"></div>
           </div>
@@ -1036,62 +1041,83 @@
           emoConf = 0.94;
         }
 
-        const boolEval = (prev, onPat, offPat) => {
+        const toggleEval = (onPat, offPat) => {
           const on = lastMatchIndex(t, onPat);
           const off = lastMatchIndex(t, offPat);
-          if (on < 0 && off < 0) return prev ? 0.58 : 0.08;
-          return off > on ? 0.07 : 0.96;
+          if (on < 0 && off < 0) return { action: "sem_mudanca", confidence: 0.9, p_ativar: 0.05, p_desativar: 0.05 };
+          if (off > on) return { action: "desativar", confidence: 0.94, p_ativar: 0.03, p_desativar: 0.94 };
+          return { action: "ativar", confidence: 0.95, p_ativar: 0.95, p_desativar: 0.02 };
         };
 
         return {
           mode: "simulator",
           model: "gemini-decision-1 (simulado localmente)",
           choices: {
-            cenario: { choice: cenario, confidence: cenarioConf },
-            periodo: { choice: periodo, confidence: periodoConf },
-            protagonista: { choice: protagonista, confidence: protagConf },
-            emocao: { choice: emocao, confidence: emoConf },
+            cenario: { choice: cenario, confidence: cenarioConf, keep_current: cenarioConf < 0.70 },
+            periodo: { choice: periodo, confidence: periodoConf, keep_current: periodoConf < 0.70 },
+            protagonista: { choice: protagonista, confidence: protagConf, keep_current: protagConf < 0.70 },
+            emocao: { choice: emocao, confidence: emoConf, keep_current: emoConf < 0.70 },
           },
-          nouls: {
-            heroi_presente: { noul: boolEval(estadoAtual.heroi_presente, ["super-heroi", "super heroi", "superheroi", "\\bheroi\\b", "heroina"], ["heroi foi embora", "sem heroi", "heroi sumiu"]) },
-            animal_presente: { noul: boolEval(estadoAtual.animal_presente, ["cachorro", "cachorrinho", "cao", "gato", "gatinho", "pet", "animal"], ["sem cachorro", "cachorro foi embora"]) },
-            dragao_presente: { noul: boolEval(estadoAtual.dragao_presente, ["dragao", "dinossauro", "monstro", "criatura"], ["dragao foi embora", "sem dragao"]) },
-            personagens_voando: { noul: boolEval(estadoAtual.personagens_voando, ["voando", "voar", "voaram", "voou", "no ceu", "pelas nuvens", "flutuando"], ["pousaram", "pousou", "no chao", "desceram", "caminhando"]) },
-            chuva: { noul: boolEval(estadoAtual.chuva, ["chuva", "chovendo", "chover", "tempestade"], ["parou de chover", "sem chuva", "abriu o sol"]) },
-            neve: { noul: boolEval(estadoAtual.neve, ["neve", "nevando", "nevar", "gelo", "flocos"], ["parou de nevar", "sem neve", "calor"]) },
-            arco_iris: { noul: boolEval(estadoAtual.arco_iris, ["arco-iris", "arco iris", "arcoiris"], ["sem arco-iris", "sumiu o arco"]) },
+          toggles: {
+            heroi_presente: toggleEval(["super-heroi", "super heroi", "superheroi", "\\bheroi\\b", "heroina"], ["heroi foi embora", "sem heroi", "heroi sumiu"]),
+            animal_presente: toggleEval(["cachorro", "cachorrinho", "cao", "gato", "gatinho", "pet", "animal"], ["sem cachorro", "cachorro foi embora"]),
+            dragao_presente: toggleEval(["dragao", "dinossauro", "monstro", "criatura"], ["dragao foi embora", "sem dragao"]),
+            personagens_voando: toggleEval(["voando", "voar", "voaram", "voou", "no ceu", "pelas nuvens", "flutuando"], ["pousaram", "pousou", "no chao", "desceram", "caminhando"]),
+            chuva: toggleEval(["chuva", "chovendo", "chover", "tempestade"], ["parou de chover", "sem chuva", "abriu o sol"]),
+            neve: toggleEval(["neve", "nevando", "nevar", "gelo", "flocos"], ["parou de nevar", "sem neve", "calor"]),
+            arco_iris: toggleEval(["arco-iris", "arco iris", "arcoiris"], ["sem arco-iris", "sumiu o arco"]),
           },
         };
       }
 
       const CHOICE_KEYS = ["cenario", "periodo", "protagonista", "emocao"];
-      const NOUL_KEYS = ["heroi_presente", "animal_presente", "dragao_presente", "personagens_voando", "chuva", "neve", "arco_iris"];
+      const TOGGLE_KEYS = ["heroi_presente", "animal_presente", "dragao_presente", "personagens_voando", "chuva", "neve", "arco_iris"];
 
       function applyEvaluation(raw, captionOverride = null) {
         const prev = { ...storyState };
-        const decisions = { choices: {}, nouls: {} };
+        const decisions = { choices: {}, toggles: {} };
 
         for (const key of CHOICE_KEYS) {
           const item = raw.choices && raw.choices[key];
           if (!item) continue;
           const keep = Boolean(item.keep_current) || !item.choice;
-          const accepted = !keep && item.confidence >= 0.70;
+          const accepted = !keep && item.confidence >= 0.65;
           if (accepted) storyState[key] = item.choice;
           decisions.choices[key] = {
             applied: storyState[key],
             confidence: keep ? 0.0 : item.confidence,
-            status: keep ? "sem mudança (mantido)" : (accepted ? "aplicado" : "mantido (< 0.70)"),
+            status: keep ? "sem mudança (mantido)" : (accepted ? "aplicado" : "mantido (< 0.65)"),
           };
         }
 
-        for (const key of NOUL_KEYS) {
-          const item = raw.nouls && raw.nouls[key];
-          if (!item) continue;
-          const p = item.noul;
-          let status = "histerese (mantido)";
-          if (p >= 0.75) { storyState[key] = true; status = "ATIVO (≥ 0.75)"; }
-          else if (p <= 0.30) { storyState[key] = false; status = "INATIVO (≤ 0.30)"; }
-          decisions.nouls[key] = { noul: p, active: storyState[key], status };
+        for (const key of TOGGLE_KEYS) {
+          const tItem = raw.toggles && raw.toggles[key];
+          const nItem = raw.nouls && raw.nouls[key];
+          if (tItem) {
+            let status = "mantido";
+            if (tItem.action === "ativar" && tItem.confidence >= 0.62) {
+              storyState[key] = true;
+              status = "ATIVADO";
+            } else if (tItem.action === "desativar" && tItem.confidence >= 0.68) {
+              storyState[key] = false;
+              status = "DESATIVADO";
+            } else {
+              status = storyState[key] ? "ativo (mantido)" : "inativo (mantido)";
+            }
+            decisions.toggles[key] = {
+              score: tItem.action === "ativar" ? tItem.confidence : (tItem.action === "desativar" ? 1 - tItem.confidence : (storyState[key] ? 0.85 : 0.15)),
+              confidence: tItem.confidence,
+              action: tItem.action,
+              active: storyState[key],
+              status,
+            };
+          } else if (nItem) {
+            const p = nItem.noul;
+            let status = "mantido";
+            if (p >= 0.75) { storyState[key] = true; status = "ATIVO"; }
+            else if (p <= 0.30) { storyState[key] = false; status = "INATIVO"; }
+            decisions.toggles[key] = { score: p, confidence: p, action: "noul", active: storyState[key], status };
+          }
         }
 
         if (!prev.heroi_presente && storyState.heroi_presente) {
@@ -1258,7 +1284,7 @@
 
         choiceContainer.innerHTML = Object.entries(decisions.choices).map(([key, d]) => {
           const pct = Math.max(0, Math.min(100, Math.round(d.confidence * 100)));
-          const applied = d.confidence >= 0.70;
+          const applied = d.confidence >= 0.65;
           return `
             <div class="metric-box">
               <div class="between" style="font-size:0.75rem">
@@ -1267,27 +1293,25 @@
               </div>
               <div class="bar-track">
                 <div class="bar-fill" style="width:${pct}%; background:${applied ? 'var(--primary)' : 'var(--muted)'}"></div>
-                <div class="marker" style="left:70%; background:var(--warning)"></div>
+                <div class="marker" style="left:65%; background:var(--warning)"></div>
               </div>
               <div class="muted">${escapeHtml(d.status)}</div>
             </div>`;
         }).join("");
 
-        noulContainer.innerHTML = Object.entries(decisions.nouls).map(([key, d]) => {
-          const pct = Math.max(0, Math.min(100, Math.round(d.noul * 100)));
+        noulContainer.innerHTML = Object.entries(decisions.toggles).map(([key, d]) => {
+          const pct = Math.max(0, Math.min(100, Math.round(d.confidence * 100)));
           return `
             <div class="metric-box">
               <div class="between" style="font-size:0.75rem">
                 <span class="mono" style="font-weight:600">${escapeHtml(key)}</span>
                 <div class="row" style="gap:6px">
                   <span style="font-size:0.72rem; font-weight:600; color:${d.active ? 'var(--success)' : 'var(--muted)'}">${escapeHtml(d.status)}</span>
-                  <span class="mono muted">${Number(d.noul).toFixed(2)}</span>
+                  <span class="mono muted">${Number(d.confidence).toFixed(2)}</span>
                 </div>
               </div>
               <div class="bar-track">
                 <div class="bar-fill" style="width:${pct}%; background:${d.active ? 'var(--success)' : 'var(--muted)'}"></div>
-                <div class="marker" style="left:30%; background:var(--error)"></div>
-                <div class="marker" style="left:75%; background:var(--success)"></div>
               </div>
             </div>`;
         }).join("");
@@ -1298,7 +1322,7 @@
           server_ms: raw.server_ms,
           usage: raw.usage,
           choices: raw.choices,
-          nouls: raw.nouls,
+          toggles: raw.toggles,
         }, null, 2);
       }
 
@@ -1346,32 +1370,50 @@
         applyEvaluation(result);
       }
 
-      async function evaluateAudioBlob(blob) {
-        if (!blob || blob.size < 1200) return;
-        const myReqId = ++latestRequestId;
-        requestCounter += 1;
-        el("req-counter").textContent = `req #${requestCounter}`;
-        const t0 = performance.now();
+      // Fila sequencial para áudio: nunca descarta uma frase válida quando você fala seguido
+      let audioQueue = [];
+      let audioUploading = false;
 
-        const form = new FormData();
-        const ext = blob.type.includes("mp4") ? "m4a" : "webm";
-        form.append("audio", blob, `fala.${ext}`);
-        form.append("estado_atual", JSON.stringify(storyState));
+      function enqueueAudioWav(wavBlob) {
+        if (!wavBlob || wavBlob.size < 4000) return;
+        audioQueue.push(wavBlob);
+        if (!audioUploading) drainAudioQueue();
+      }
 
-        try {
-          const resp = await fetch("/api/evaluate-audio", { method: "POST", body: form });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const result = await resp.json();
-          if (myReqId !== latestRequestId) return;
-          const ms = Math.round(performance.now() - t0);
-          el("latency-readout").textContent = `${ms} ms (áudio → Gemini: ${result.server_ms} ms)`;
-          el("mode-badge").textContent = "Gemini Decision 1 (áudio)";
-          el("mode-badge").classList.add("badge-live");
-          applyEvaluation(result);
-          el("stage-caption").textContent = `🎙️ ${el("pill-cenario").textContent} · ${el("pill-periodo").textContent} · ${el("pill-emocao").textContent} · ${el("pill-extras").textContent}`;
-        } catch (err) {
-          el("mic-status").textContent = `Erro no áudio (${err.message})`;
+      async function drainAudioQueue() {
+        audioUploading = true;
+        while (audioQueue.length > 0) {
+          const blob = audioQueue.shift();
+          requestCounter += 1;
+          el("req-counter").textContent = `req #${requestCounter}`;
+          el("mic-status").textContent = "⚡ Analisando frase no Gemini...";
+          const t0 = performance.now();
+
+          const form = new FormData();
+          form.append("audio", blob, "fala.wav");
+          form.append("estado_atual", JSON.stringify(storyState));
+
+          try {
+            const resp = await fetch("/api/evaluate-audio", { method: "POST", body: form });
+            if (!resp.ok) {
+              let detail = `HTTP ${resp.status}`;
+              try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (_) {}
+              throw new Error(detail);
+            }
+            const result = await resp.json();
+            const ms = Math.round(performance.now() - t0);
+            el("latency-readout").textContent = `${ms} ms (Gemini: ${result.server_ms} ms)`;
+            el("mode-badge").textContent = "Gemini Decision 1 (áudio)";
+            el("mode-badge").classList.add("badge-live");
+            applyEvaluation(result);
+            el("stage-caption").textContent = `🎙️ ${el("pill-cenario").textContent} · ${el("pill-periodo").textContent} · ${el("pill-emocao").textContent} · ${el("pill-extras").textContent}`;
+            el("mic-status").textContent = wantListening ? "🎙️ Ouvindo... fale sua próxima frase" : "";
+          } catch (err) {
+            el("mic-status").textContent = `⚠️ ${err.message}`;
+            el("stage-caption").textContent = `⚠️ Erro ao enviar áudio: ${err.message}`;
+          }
         }
+        audioUploading = false;
       }
 
       function scheduleEvaluation(text, delay = 350) {
@@ -1379,106 +1421,195 @@
         debounceTimer = setTimeout(() => evaluateText(text), delay);
       }
 
-      // Microfone híbrido:
-      // - Quando Gemini Decision 1 está ativo: grava trechos completos de ~2.8s (MP4 no iPhone / WebM no Android) e envia direto para /api/evaluate-audio!
-      // - Em modo estático (sem backend): usa Web Speech API (pt-BR).
+      // =========================================================================
+      // GRAVADOR WAV 16kHz MONO + VAD (Voice Activity Detection)
+      // Funciona idêntico em iPhone Safari, Android Chrome e Desktop (zero bug MP4/WebM!)
+      // =========================================================================
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let recognition = null;
       let wantListening = false;
       let mediaStream = null;
-      let mediaRecorder = null;
-      let clipTimer = null;
+      let captureCtx = null;
+      let captureSource = null;
+      let captureProcessor = null;
+      let speechBuffer = [];
+      let preRollBuffer = [];
+      let isSpeaking = false;
+      let speechStartAt = 0;
+      let lastVoiceAt = 0;
 
-      function pickAudioMimeType() {
-        if (typeof MediaRecorder === "undefined") return "";
-        const candidates = [
-          "audio/mp4",
-          "audio/webm;codecs=opus",
-          "audio/webm",
-          "audio/ogg;codecs=opus",
-        ];
-        for (const c of candidates) {
-          if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+      function encodeWav16k(floatChunks, inputRate) {
+        let totalLen = 0;
+        for (const c of floatChunks) totalLen += c.length;
+        const merged = new Float32Array(totalLen);
+        let offset = 0;
+        for (const c of floatChunks) { merged.set(c, offset); offset += c.length; }
+
+        const targetRate = 16000;
+        const ratio = inputRate / targetRate;
+        const outLen = Math.max(1, Math.floor(merged.length / ratio));
+        const pcm = new Int16Array(outLen);
+        for (let i = 0; i < outLen; i++) {
+          const idx = Math.min(merged.length - 1, Math.floor(i * ratio));
+          const s = Math.max(-1, Math.min(1, merged[idx]));
+          pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
         }
-        return "";
+
+        const buf = new ArrayBuffer(44 + pcm.length * 2);
+        const view = new DataView(buf);
+        const writeStr = (pos, str) => { for (let i = 0; i < str.length; i++) view.setUint8(pos + i, str.charCodeAt(i)); };
+        writeStr(0, "RIFF");
+        view.setUint32(4, 36 + pcm.length * 2, true);
+        writeStr(8, "WAVE");
+        writeStr(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, targetRate, true);
+        view.setUint32(28, targetRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeStr(36, "data");
+        view.setUint32(40, pcm.length * 2, true);
+        for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, pcm[i], true);
+
+        return new Blob([buf], { type: "audio/wav" });
+      }
+
+      function flushSpeechSegment(keepOverlap = false) {
+        if (!captureCtx || speechBuffer.length === 0) return;
+        const sampleRate = captureCtx.sampleRate;
+        const chunksToSend = speechBuffer;
+        speechBuffer = keepOverlap ? chunksToSend.slice(-3) : [];
+        const wavBlob = encodeWav16k(chunksToSend, sampleRate);
+        enqueueAudioWav(wavBlob);
       }
 
       function stopMic() {
+        if (wantListening && isSpeaking && speechBuffer.length > 2) {
+          flushSpeechSegment(false);
+        }
         wantListening = false;
-        clearTimeout(clipTimer);
-        if (mediaRecorder && mediaRecorder.state !== "inactive") {
-          try { mediaRecorder.stop(); } catch (_) {}
-        }
-        mediaRecorder = null;
-        if (mediaStream) {
-          mediaStream.getTracks().forEach((tr) => tr.stop());
-          mediaStream = null;
-        }
+        isSpeaking = false;
+        speechBuffer = [];
+        preRollBuffer = [];
+
+        if (captureProcessor) { try { captureProcessor.disconnect(); } catch (_) {} captureProcessor = null; }
+        if (captureSource) { try { captureSource.disconnect(); } catch (_) {} captureSource = null; }
+        if (captureCtx) { try { captureCtx.close(); } catch (_) {} captureCtx = null; }
+        if (mediaStream) { mediaStream.getTracks().forEach((tr) => tr.stop()); mediaStream = null; }
         if (recognition) { try { recognition.stop(); } catch (_) {} }
+
+        el("vu-wrap").classList.add("hidden");
+        el("vu-bar").style.width = "0%";
         el("btn-mic").classList.remove("mic-recording");
         el("mic-label").textContent = "Falar no microfone";
-        el("mic-status").textContent = "";
-      }
-
-      function recordNextAudioClip() {
-        if (!wantListening || !mediaStream) return;
-        const mimeType = pickAudioMimeType();
-        const opts = mimeType ? { mimeType } : undefined;
-        const chunks = [];
-        let recorder;
-        try {
-          recorder = new MediaRecorder(mediaStream, opts);
-          mediaRecorder = recorder;
-        } catch (err) {
-          el("mic-status").textContent = "MediaRecorder indisponível — usando ditado do navegador.";
-          stopMic();
-          startSpeechMic();
-          return;
-        }
-
-        recorder.ondataavailable = (ev) => {
-          if (ev.data && ev.data.size > 0) chunks.push(ev.data);
-        };
-
-        recorder.onstop = () => {
-          const finalMime = recorder.mimeType || mimeType || "audio/webm";
-          const blob = new Blob(chunks, { type: finalMime });
-          evaluateAudioBlob(blob);
-          if (wantListening) recordNextAudioClip();
-        };
-
-        recorder.start();
-        clipTimer = setTimeout(() => {
-          if (recorder.state === "recording") {
-            recorder.stop();
-          }
-        }, 2800);
+        if (!audioUploading) el("mic-status").textContent = "";
       }
 
       async function startDirectAudioMic() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           startSpeechMic();
           return;
         }
         stopDemo();
+
+        // Cria e ativa o AudioContext SINCRONAMENTE no toque (obrigatório no Safari do iPhone!)
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) { startSpeechMic(); return; }
+        captureCtx = new AudioCtx();
+        captureCtx.resume().catch(() => {});
+
         try {
-          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
         } catch (err) {
-          el("mic-status").textContent = "Permissão de microfone negada (confira HTTPS e permissões do Safari/Chrome).";
+          el("mic-status").textContent = "Permissão de microfone negada (confira permissões do Safari/Chrome).";
           stopMic();
           return;
         }
+
+        if (captureCtx.state === "suspended") {
+          try { await captureCtx.resume(); } catch (_) {}
+        }
+
         wantListening = true;
+        isSpeaking = false;
+        speechBuffer = [];
+        preRollBuffer = [];
+
+        captureSource = captureCtx.createMediaStreamSource(mediaStream);
+        captureProcessor = captureCtx.createScriptProcessor(4096, 1, 1);
+
+        captureProcessor.onaudioprocess = (ev) => {
+          if (!wantListening) return;
+          const input = ev.inputBuffer.getChannelData(0);
+          const copy = new Float32Array(input.length);
+          copy.set(input);
+
+          // Calcula volume (RMS) para barra visual e detecção de voz (VAD)
+          let sum = 0;
+          for (let i = 0; i < copy.length; i++) sum += copy[i] * copy[i];
+          const rms = Math.sqrt(sum / copy.length);
+          const vuPct = Math.min(100, Math.round(rms * 550));
+          el("vu-bar").style.width = `${vuPct}%`;
+
+          const now = Date.now();
+          const VOICE_THRESHOLD = 0.015;
+
+          if (rms > VOICE_THRESHOLD) {
+            if (!isSpeaking) {
+              isSpeaking = true;
+              speechStartAt = now;
+              speechBuffer = [...preRollBuffer, copy];
+              el("mic-status").textContent = "🗣️ Captando sua fala...";
+            } else {
+              speechBuffer.push(copy);
+            }
+            lastVoiceAt = now;
+
+            // Se falar sem pausar por 4.2s, envia o bloco mantendo overlap para não cortar palavras
+            if (now - speechStartAt >= 4200) {
+              flushSpeechSegment(true);
+              speechStartAt = now;
+            }
+          } else {
+            // Mantém pré-buffer de ~0.4s para nunca cortar a primeira sílaba
+            preRollBuffer.push(copy);
+            if (preRollBuffer.length > 4) preRollBuffer.shift();
+
+            if (isSpeaking) {
+              speechBuffer.push(copy);
+              // Pausa natural de 650 ms após falar -> envia imediatamente!
+              if (now - lastVoiceAt >= 650) {
+                isSpeaking = false;
+                if (now - speechStartAt >= 350) {
+                  flushSpeechSegment(false);
+                } else {
+                  speechBuffer = [];
+                }
+              }
+            }
+          }
+        };
+
+        captureSource.connect(captureProcessor);
+        const silentGain = captureCtx.createGain();
+        silentGain.gain.value = 0;
+        captureProcessor.connect(silentGain);
+        silentGain.connect(captureCtx.destination);
+
+        el("vu-wrap").classList.remove("hidden");
         el("btn-mic").classList.add("mic-recording");
         el("mic-label").textContent = "Parar microfone";
-        el("mic-status").textContent = "Enviando áudio direto ao Gemini Decision 1...";
-        el("stage-caption").textContent = "🎙️ Ouvindo sua história ao vivo (atualiza a cada ~3s)...";
-        recordNextAudioClip();
+        el("mic-status").textContent = "🎙️ Ouvindo... fale uma frase e faça uma pequena pausa";
+        el("stage-caption").textContent = "🎙️ Microfone ativo (WAV → Gemini Decision 1). Pode contar sua história!";
       }
 
       function startSpeechMic() {
         if (!SpeechRecognition) {
-          el("mic-status").textContent = "Microfone contínuo indisponível neste navegador — digite ou conecte o backend Gemini.";
+          el("mic-status").textContent = "Microfone indisponível neste navegador — digite sua história.";
           return;
         }
         stopDemo();

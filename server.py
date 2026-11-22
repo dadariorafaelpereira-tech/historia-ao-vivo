@@ -1,12 +1,12 @@
 """Backend FastAPI do História ao Vivo — 100% Google (Gemini Decision 1 + Cloud Run).
 
-Suporta:
-- Gemini Decisions API (gemini-decision-1) via GEMINI_API_KEY (texto E áudio direto!)
-- Opcionalmente TypeSafe Jev (jev-latest) via TYPESAFE_API_KEY (texto)
+Usa a Gemini Decisions API (gemini-decision-1) para texto (/api/evaluate)
+e áudio direto (/api/evaluate-audio).
 
-Execução local / Cloud Run:
-    export GEMINI_API_KEY="sua-chave-do-google-ai-studio"
-    uvicorn server:app --host 0.0.0.0 --port 8080
+Melhorias chave:
+- Mapeia audio/mp4 -> audio/m4a (enum oficial da Gemini Decisions API) além de suportar audio/wav e audio/webm.
+- Usa perguntas Choice de 3 estados (ativar / desativar / sem_mudanca) para todos os elementos,
+  evitando que personagens/clima/voo desliguem sozinhos entre uma frase e outra.
 """
 
 from __future__ import annotations
@@ -34,19 +34,23 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent
 GEMINI_DECISIONS_URL = "https://generativelanguage.googleapis.com/v1beta/decisions"
 GEMINI_DECISION_MODEL = "gemini-decision-1"
-MAX_AUDIO_BYTES = 5 * 1024 * 1024  # 5 MB por trecho curto de voz
+MAX_AUDIO_BYTES = 5 * 1024 * 1024
 
-ALLOWED_AUDIO_MIME_TYPES = {
-    "audio/webm",
-    "audio/mp4",
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/ogg",
+# Enum oficial aceito pela Gemini Decisions API para blocos `audio`
+GEMINI_AUDIO_MIME_TYPES = {
     "audio/wav",
-    "audio/x-wav",
+    "audio/mp3",
+    "audio/mpeg",
+    "audio/aiff",
     "audio/aac",
+    "audio/ogg",
+    "audio/flac",
     "audio/m4a",
-    "audio/x-m4a",
+    "audio/opus",
+    "audio/webm",
+    "audio/l16",
+    "audio/alaw",
+    "audio/mulaw",
 }
 
 app = FastAPI(title="História ao Vivo — Gemini Decision 1 Backend")
@@ -68,126 +72,115 @@ class EvaluateRequest(BaseModel):
     estado_atual: dict[str, Any] = Field(default_factory=dict)
 
 
-def build_gemini_questions() -> dict[str, Any]:
-    """Esquema de perguntas fechadas (choice + noul) para gemini-decision-1.
+def toggle_question(elemento: str, ativar_desc: str, desativar_desc: str) -> dict[str, Any]:
+    return {
+        "type": "choice",
+        "instructions": (
+            f"O trecho falado menciona alguma mudança sobre {elemento}? "
+            "Escolha sem_mudanca se o trecho não falar sobre isso."
+        ),
+        "criteria": {
+            "ativar": ativar_desc,
+            "desativar": desativar_desc,
+            "sem_mudanca": f"O trecho não menciona {elemento}; manter o estado anterior.",
+        },
+    }
 
-    Inclui opção `sem_mudanca` nos `choice` conforme boa prática da Decisions API,
-    evitando trocas aleatórias quando a fala não mencionar aquele atributo.
-    """
+
+def build_gemini_questions() -> dict[str, Any]:
+    """Perguntas enxutas (~900 tokens) com `sem_mudanca` explícito para estabilidade total."""
     return {
         "cenario": {
             "type": "choice",
-            "instructions": (
-                "A fala recente indica que a história está acontecendo em algum destes cenários? "
-                "Escolha sem_mudanca se a fala não mencionar lugar ou mudança de ambiente."
-            ),
+            "instructions": "O trecho menciona algum destes lugares/cenários? Se não mencionar lugar, escolha sem_mudanca.",
             "criteria": {
-                "quarto": "Quarto, casa, cama, sala ou ambiente interno doméstico.",
-                "floresta": "Floresta, mata, bosque, árvores, selva ou natureza selvagem.",
-                "cidade": "Cidade, prédios, ruas, avenida, carros ou ambiente urbano.",
-                "praia": "Praia, mar, oceano, areia, ondas, ilha ou litoral.",
-                "castelo": "Castelo, reino, palácio, torre medieval ou fortaleza.",
-                "espaco": "Espaço sideral, planetas, lua, estrelas, galáxia ou foguete.",
-                "parque": "Parque, jardim, praça, campo aberto, gramado ou flores.",
-                "sem_mudanca": "A fala não menciona nenhum cenário novo ou lugar específico.",
+                "quarto": "Quarto, casa, cama, sala ou ambiente interno.",
+                "floresta": "Floresta, mata, bosque, árvores ou selva.",
+                "cidade": "Cidade, prédios, ruas, avenida ou ambiente urbano.",
+                "praia": "Praia, mar, oceano, areia, ondas ou ilha.",
+                "castelo": "Castelo, reino, palácio ou torre medieval.",
+                "espaco": "Espaço sideral, planetas, lua, foguete ou galáxia.",
+                "parque": "Parque, jardim, praça, campo ou flores.",
+                "sem_mudanca": "Não menciona lugar ou cenário.",
             },
         },
         "periodo": {
             "type": "choice",
-            "instructions": (
-                "A fala recente menciona horário do dia ou iluminação do céu? "
-                "Escolha sem_mudanca se não houver referência a dia, pôr do sol ou noite."
-            ),
+            "instructions": "O trecho menciona horário do dia ou iluminação do céu? Se não mencionar, escolha sem_mudanca.",
             "criteria": {
-                "dia": "Manhã, dia claro, sol brilhando ou céu azul.",
+                "dia": "Manhã, dia claro, sol brilhando ou amanheceu.",
                 "entardecer": "Pôr do sol, fim de tarde, entardecendo ou céu alaranjado.",
                 "noite": "Noite, anoiteceu, escuro, lua, estrelas ou madrugada.",
-                "sem_mudanca": "A fala não menciona horário nem iluminação.",
+                "sem_mudanca": "Não menciona horário nem luz do céu.",
             },
         },
         "protagonista": {
             "type": "choice",
-            "instructions": (
-                "A fala recente identifica claramente se a criança protagonista é menino ou menina? "
-                "Escolha sem_mudanca se não mencionar."
-            ),
+            "instructions": "O trecho identifica se a criança protagonista é menino ou menina? Se não mencionar, escolha sem_mudanca.",
             "criteria": {
-                "menino": "Menino, garoto, filho, príncipe ou pronome masculino para a criança.",
-                "menina": "Menina, garota, filha, princesa ou pronome feminino para a criança.",
-                "sem_mudanca": "Não identifica ou não muda quem é a criança protagonista.",
+                "menino": "Menino, garoto, filho ou príncipe.",
+                "menina": "Menina, garota, filha ou princesa.",
+                "sem_mudanca": "Não menciona ou não muda o protagonista.",
             },
         },
         "emocao": {
             "type": "choice",
-            "instructions": (
-                "Qual emoção da criança protagonista aparece na fala recente? "
-                "Escolha sem_mudanca se nenhuma emoção for expressa."
-            ),
+            "instructions": "Qual emoção da criança aparece no trecho? Se não houver emoção explícita, escolha sem_mudanca.",
             "criteria": {
-                "neutro": "Calma, tranquila ou explicitamente normal.",
-                "feliz": "Alegre, sorrindo, rindo, animada, empolgada ou comemorando.",
-                "triste": "Triste, chorando, solitária, cabisbaixa ou chateada.",
-                "surpreso": "Surpresa, admirada, maravilhada, espantada ou assustada.",
-                "sem_mudanca": "A fala não expressa mudança emocional.",
+                "neutro": "Calmo, tranquilo ou normal.",
+                "feliz": "Feliz, alegre, sorrindo, rindo, empolgado ou animado.",
+                "triste": "Triste, chorando, solitário, cabisbaixo ou chateado.",
+                "surpreso": "Surpreso, espantado, maravilhado, assustado ou admirado.",
+                "sem_mudanca": "Não expressa mudança de emoção.",
             },
         },
-        "heroi_presente": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, há um super-herói ou heroína presente na cena agora?",
-            "criteria": {
-                "true_description": "Um super-herói chegou, está acompanhando ou já estava presente e não foi embora.",
-                "false_description": "Não há super-herói na cena ou ele acabou de ir embora/desaparecer.",
-            },
-        },
-        "animal_presente": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, há um cachorrinho, gato ou animal amigo presente na cena agora?",
-            "criteria": {
-                "true_description": "Um cachorrinho/animal amigo apareceu ou continua na cena.",
-                "false_description": "Não há animal amigo na cena ou ele saiu.",
-            },
-        },
-        "dragao_presente": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, há um dragão, dinossauro ou criatura mágica presente na cena agora?",
-            "criteria": {
-                "true_description": "Um dragão, dinossauro ou criatura mágica apareceu ou continua na cena.",
-                "false_description": "Não há dragão/criatura mágica ou ele foi embora.",
-            },
-        },
-        "personagens_voando": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, os personagens estão voando ou flutuando no ar agora?",
-            "criteria": {
-                "true_description": "Estão voando, subindo ao céu, nas nuvens ou flutuando.",
-                "false_description": "Estão no chão, pousaram, caminhando, sentados ou deitados.",
-            },
-        },
-        "chuva": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, está chovendo ou há tempestade na cena agora?",
-            "criteria": {
-                "true_description": "Começou a chover, está chovendo ou há tempestade.",
-                "false_description": "Não está chovendo ou a chuva parou.",
-            },
-        },
-        "neve": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, está nevando ou há neve/gelo caindo na cena agora?",
-            "criteria": {
-                "true_description": "Está nevando, flocos de neve ou cenário de neve ativa.",
-                "false_description": "Não está nevando ou parou de nevar.",
-            },
-        },
-        "arco_iris": {
-            "type": "noul",
-            "instructions": "Considerando o estado atual e a fala recente, há um arco-íris colorido no céu agora?",
-            "criteria": {
-                "true_description": "Um arco-íris apareceu ou continua visível no céu.",
-                "false_description": "Não há arco-íris ou ele desapareceu.",
-            },
-        },
+        "heroi_presente": toggle_question(
+            "super-herói",
+            "Um super-herói ou heroína chegou, apareceu ou está atuando na cena.",
+            "O super-herói foi embora, sumiu, se despediu ou a criança ficou sozinha sem ele.",
+        ),
+        "animal_presente": toggle_question(
+            "cachorro ou animal amigo",
+            "Um cachorrinho, cão, gato ou animal amigo apareceu ou está junto na cena.",
+            "O animal amigo foi embora, sumiu ou saiu da cena.",
+        ),
+        "dragao_presente": toggle_question(
+            "dragão ou criatura mágica",
+            "Um dragão, dinossauro ou criatura mágica apareceu ou está na cena.",
+            "O dragão/criatura foi embora, sumiu ou saiu da cena.",
+        ),
+        "personagens_voando": toggle_question(
+            "voar ou flutuar",
+            "Os personagens começaram a voar, continuaram voando, subiram ao céu ou estão flutuando.",
+            "Os personagens pousaram, desceram ao chão, aterrissaram, deitaram ou voltaram a andar no chão.",
+        ),
+        "chuva": toggle_question(
+            "chuva ou tempestade",
+            "Começou a chover, está chovendo ou há tempestade.",
+            "A chuva parou, o tempo limpou ou abriu sol sem chuva.",
+        ),
+        "neve": toggle_question(
+            "neve ou flocos de gelo",
+            "Começou a nevar, está nevando ou há flocos de neve caindo.",
+            "A neve parou ou o tempo esquentou sem neve.",
+        ),
+        "arco_iris": toggle_question(
+            "arco-íris",
+            "Apareceu um arco-íris colorido no céu.",
+            "O arco-íris sumiu ou desapareceu.",
+        ),
     }
+
+
+TOGGLE_KEYS = {
+    "heroi_presente",
+    "animal_presente",
+    "dragao_presente",
+    "personagens_voando",
+    "chuva",
+    "neve",
+    "arco_iris",
+}
 
 
 async def call_gemini_decisions(
@@ -209,9 +202,15 @@ async def call_gemini_decisions(
             json=payload,
         )
     if resp.status_code >= 400:
+        err_msg = ""
+        try:
+            err_body = resp.json()
+            err_msg = err_body.get("error", {}).get("message", "")
+        except Exception:
+            err_msg = resp.text[:160]
         raise HTTPException(
             status_code=502,
-            detail=f"Gemini Decisions API retornou HTTP {resp.status_code}.",
+            detail=f"Gemini Decisions API HTTP {resp.status_code}: {err_msg}",
         )
 
     data = resp.json()
@@ -219,21 +218,23 @@ async def call_gemini_decisions(
     elapsed_ms = round((time.perf_counter() - t0) * 1000)
 
     choices: dict[str, Any] = {}
-    nouls: dict[str, Any] = {}
+    toggles: dict[str, Any] = {}
     for key, ans in answers.items():
-        qtype = ans.get("type")
-        if qtype == "choice":
-            choice_val = ans.get("choice")
-            conf = float(ans.get("confidence", 0.0))
-            if choice_val == "sem_mudanca":
+        choice_val = ans.get("choice")
+        conf = float(ans.get("confidence", 0.0))
+        probs = ans.get("probabilities", {})
+        if key in TOGGLE_KEYS:
+            toggles[key] = {
+                "action": choice_val or "sem_mudanca",
+                "confidence": conf,
+                "p_ativar": float(probs.get("ativar", 0.0)),
+                "p_desativar": float(probs.get("desativar", 0.0)),
+            }
+        else:
+            if choice_val == "sem_mudanca" or not choice_val:
                 choices[key] = {"choice": None, "confidence": 0.0, "keep_current": True}
             else:
                 choices[key] = {"choice": choice_val, "confidence": conf}
-        elif qtype == "noul":
-            nouls[key] = {
-                "noul": float(ans.get("noul", 0.5)),
-                "confidence": float(ans.get("confidence", 0.5)),
-            }
 
     return {
         "mode": "gemini",
@@ -241,20 +242,22 @@ async def call_gemini_decisions(
         "server_ms": elapsed_ms,
         "usage": data.get("usage"),
         "choices": choices,
-        "nouls": nouls,
+        "toggles": toggles,
     }
 
 
 def sanitize_audio_mime(raw_mime: str | None) -> str:
     base = (raw_mime or "").split(";")[0].strip().lower()
-    if base == "audio/x-m4a" or base == "audio/m4a":
-        return "audio/mp4"
-    if base == "audio/x-wav":
-        return "audio/wav"
-    if base == "audio/mp3":
-        return "audio/mpeg"
-    if base in ALLOWED_AUDIO_MIME_TYPES:
-        return base
+    mapping = {
+        "audio/mp4": "audio/m4a",  # Safari/iOS grava MP4/AAC; Gemini enum usa audio/m4a
+        "audio/x-m4a": "audio/m4a",
+        "audio/x-wav": "audio/wav",
+        "audio/wave": "audio/wav",
+        "audio/vnd.wave": "audio/wav",
+    }
+    normalized = mapping.get(base, base)
+    if normalized in GEMINI_AUDIO_MIME_TYPES:
+        return normalized
     raise HTTPException(
         status_code=400,
         detail=f"Formato de áudio não suportado: {base or 'vazio'}.",
@@ -296,23 +299,23 @@ async def health() -> dict[str, Any]:
 @app.post("/api/evaluate")
 async def evaluate_story(req: EvaluateRequest) -> dict[str, Any]:
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key:
-        blocks = [
-            {
-                "type": "text",
-                "text": f"Estado atual da história (JSON): {json.dumps(req.estado_atual, ensure_ascii=False)}\n",
-            },
-            {
-                "type": "text",
-                "text": f"Fala recente do narrador (português do Brasil): {req.fala_recente}",
-            },
-        ]
-        return await call_gemini_decisions(blocks, gemini_key)
+    if not gemini_key:
+        raise HTTPException(
+            status_code=503,
+            detail="GEMINI_API_KEY não configurada no servidor.",
+        )
 
-    raise HTTPException(
-        status_code=503,
-        detail="GEMINI_API_KEY não configurada nas variáveis de ambiente do servidor.",
-    )
+    blocks = [
+        {
+            "type": "text",
+            "text": f"Estado atual: {json.dumps(req.estado_atual, ensure_ascii=False)}\n",
+        },
+        {
+            "type": "text",
+            "text": f"Trecho falado (pt-BR): {req.fala_recente}",
+        },
+    ]
+    return await call_gemini_decisions(blocks, gemini_key)
 
 
 @app.post("/api/evaluate-audio")
@@ -324,7 +327,7 @@ async def evaluate_story_audio(
     if not gemini_key:
         raise HTTPException(
             status_code=503,
-            detail="GEMINI_API_KEY não configurada — envio direto de áudio requer Gemini Decision 1.",
+            detail="GEMINI_API_KEY não configurada — áudio direto requer Gemini Decision 1.",
         )
 
     mime_type = sanitize_audio_mime(audio.content_type)
@@ -346,8 +349,8 @@ async def evaluate_story_audio(
         {
             "type": "text",
             "text": (
-                f"Estado atual da história (JSON): {json.dumps(parsed_state, ensure_ascii=False)}\n"
-                "Ouça o trecho de narração infantil em português do Brasil a seguir e responda às perguntas sobre o estado atual da cena.\n"
+                f"Estado atual: {json.dumps(parsed_state, ensure_ascii=False)}\n"
+                "Ouça o trecho falado em português do Brasil abaixo e classifique apenas o que mudou:\n"
             ),
         },
         {
