@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1020" />
-  <title>História ao Vivo — Voz + Gemini Decision 1</title>
+  <title>História ao Vivo — Jev &amp; Gemini Decision 1</title>
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
   <link rel="manifest" href="./manifest.json" />
   <style>
@@ -81,6 +81,36 @@
     .badge-live {
       border-color: var(--success);
       color: var(--success);
+    }
+    .badge-warn {
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    .seg-group {
+      display: inline-flex;
+      padding: 2px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      gap: 2px;
+    }
+    .seg-btn {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .seg-btn.active {
+      background: var(--primary);
+      color: var(--primary-fg);
     }
 
     .grid {
@@ -281,7 +311,7 @@
     <header>
       <div>
         <div class="title-row">
-          <h1>História ao Vivo — Gemini Decision 1</h1>
+          <h1>História ao Vivo</h1>
           <span id="mode-badge" class="badge">Simulador local</span>
         </div>
         <p class="subtitle">
@@ -289,6 +319,10 @@
         </p>
       </div>
       <div class="row">
+        <div class="seg-group" role="group" aria-label="Motor de decisão">
+          <button id="btn-provider-jev" type="button" class="seg-btn" data-provider="jev">⚡ Jev</button>
+          <button id="btn-provider-gemini" type="button" class="seg-btn active" data-provider="gemini">✦ Gemini</button>
+        </div>
         <button id="btn-sound" type="button" class="btn btn-sm">
           <span id="sound-icon">🔇</span><span id="sound-label">Som off</span>
         </button>
@@ -815,7 +849,7 @@
       <aside class="card">
         <div class="tabs">
           <button id="tab-btn-live" type="button" class="tab-btn active">Decisões ao vivo</button>
-          <button id="tab-btn-backend" type="button" class="tab-btn">Conexão Google</button>
+          <button id="tab-btn-backend" type="button" class="tab-btn">Motor &amp; API</button>
         </div>
 
         <div id="tab-live" class="card-pad stack">
@@ -837,7 +871,7 @@
           <hr class="divider" />
           <div class="stack" style="gap:6px">
             <div class="between">
-              <strong style="font-size:0.77rem">Resposta <code class="mono">decisions.create()</code></strong>
+              <strong style="font-size:0.77rem">Resposta da API (<code class="mono" id="api-method-label">system_one / decisions</code>)</strong>
               <span id="req-counter" class="mono muted">req #0</span>
             </div>
             <pre id="json-output" class="mono"></pre>
@@ -846,7 +880,7 @@
 
         <div id="tab-backend" class="card-pad stack hidden">
           <div class="metric-box stack" style="gap:8px">
-            <strong style="font-size:0.8rem">Status do servidor Gemini Decision 1</strong>
+            <strong style="font-size:0.8rem">Status dos motores (Jev &amp; Gemini)</strong>
             <p id="backend-status" class="muted" style="margin:0">Verificando /api/health...</p>
             <div>
               <label for="backend-url" class="label">Endpoint POST de texto:</label>
@@ -854,11 +888,11 @@
             </div>
             <label class="row" style="font-size:0.78rem; cursor:pointer">
               <input id="use-real-api" type="checkbox" />
-              <span>Usar Gemini Decision 1 real (fallback automático para simulador)</span>
+              <span>Usar API real no servidor (fallback automático para simulador)</span>
             </label>
             <label class="row" style="font-size:0.78rem; cursor:pointer">
               <input id="use-direct-audio" type="checkbox" />
-              <span>Enviar áudio direto do microfone para o Gemini (recomendado no iPhone)</span>
+              <span>Enviar áudio WAV 16kHz pelo servidor (recomendado no iPhone; no Jev transcreve com Gemini Flash-Lite)</span>
             </label>
           </div>
         </div>
@@ -892,23 +926,89 @@
       let soundEnabled = false;
       let audioCtx = null;
 
+      let selectedProvider = "gemini";
+      let healthState = {
+        ok: false,
+        gemini_configured: false,
+        jev_configured: false,
+        audio_supported: false,
+        jev_audio_supported: false,
+        stt_model: "gemini-3.5-flash-lite",
+      };
+
       const el = (id) => document.getElementById(id);
 
-      // Detecta automaticamente se está rodando no Cloud Run / FastAPI com GEMINI_API_KEY
+      function updateProviderUI(announce = false) {
+        el("btn-provider-jev").classList.toggle("active", selectedProvider === "jev");
+        el("btn-provider-gemini").classList.toggle("active", selectedProvider === "gemini");
+        el("api-method-label").textContent = selectedProvider === "jev" ? "jev-latest" : "gemini-decision-1";
+
+        const badge = el("mode-badge");
+        badge.classList.remove("badge-live", "badge-warn");
+
+        if (!healthState.ok) {
+          badge.textContent = "Simulador local";
+          return;
+        }
+
+        if (selectedProvider === "jev") {
+          if (healthState.jev_configured) {
+            badge.textContent = "Jev ativo";
+            badge.classList.add("badge-live");
+            el("backend-status").textContent = healthState.jev_audio_supported
+              ? `Motor ativo: TypeSafe Jev (voz transcrita via ${healthState.stt_model} → Jev).`
+              : "Motor ativo: TypeSafe Jev (texto; para voz no iPhone, mantenha GEMINI_API_KEY).";
+            if (announce) {
+              el("stage-caption").textContent = "⚡ Motor trocado para TypeSafe Jev! Pode falar ou digitar.";
+            }
+          } else {
+            badge.textContent = "Jev sem chave";
+            badge.classList.add("badge-warn");
+            el("backend-status").textContent =
+              "TYPESAFE_API_KEY ainda não configurada no Cloud Run. Adicione a variável para ativar o Jev (ou volte para Gemini).";
+            if (announce) {
+              el("stage-caption").textContent =
+                "⚠️ Jev precisa da variável TYPESAFE_API_KEY no Cloud Run. Adicione lá ou toque em ✦ Gemini.";
+            }
+          }
+        } else {
+          if (healthState.gemini_configured) {
+            badge.textContent = "Gemini Decision 1 ativo";
+            badge.classList.add("badge-live");
+            el("backend-status").textContent = healthState.jev_configured
+              ? "Motor ativo: Gemini Decision 1 (texto + áudio direto). Jev também está pronto no topo."
+              : "Motor ativo: Google Gemini Decision 1 (texto + áudio direto ativos).";
+            if (announce) {
+              el("stage-caption").textContent = "✦ Motor trocado para Gemini Decision 1! Pode falar ou digitar.";
+            }
+          } else {
+            badge.textContent = "Gemini sem chave";
+            badge.classList.add("badge-warn");
+            el("backend-status").textContent =
+              "GEMINI_API_KEY não configurada — usando simulador local.";
+          }
+        }
+      }
+
+      // Detecta automaticamente provedores configurados no Cloud Run / FastAPI
       if (window.location.protocol.startsWith("http")) {
         fetch("/api/health")
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
-            if (data && data.gemini_configured) {
-              el("use-real-api").checked = true;
+            if (data && data.ok) {
+              healthState = {
+                ok: true,
+                gemini_configured: Boolean(data.gemini_configured),
+                jev_configured: Boolean(data.jev_configured),
+                audio_supported: Boolean(data.audio_supported),
+                jev_audio_supported: Boolean(data.jev_audio_supported),
+                stt_model: data.stt_model || "gemini-3.5-flash-lite",
+              };
+              const hasAny = healthState.jev_configured || healthState.gemini_configured;
+              el("use-real-api").checked = hasAny;
               el("use-direct-audio").checked = Boolean(data.audio_supported);
-              el("mode-badge").textContent = "Gemini Decision 1 ativo";
-              el("mode-badge").classList.add("badge-live");
-              el("backend-status").textContent =
-                "Conectado ao Google Gemini Decision 1 (texto + áudio direto ativos).";
-            } else if (data && data.ok) {
-              el("backend-status").textContent =
-                "Servidor ativo, mas GEMINI_API_KEY ainda não foi configurada — usando simulador local.";
+              selectedProvider = data.default_provider === "jev" ? "jev" : "gemini";
+              updateProviderUI(false);
             } else {
               el("backend-status").textContent =
                 "Hospedagem estática (GitHub Pages) — usando simulador local.";
@@ -1319,6 +1419,9 @@
         el("json-output").textContent = JSON.stringify({
           mode: raw.mode,
           model: raw.model,
+          transcript: raw.transcript || undefined,
+          stt_ms: raw.stt_ms !== undefined ? raw.stt_ms : undefined,
+          stt_model: raw.stt_model || undefined,
           server_ms: raw.server_ms,
           usage: raw.usage,
           choices: raw.choices,
@@ -1339,6 +1442,7 @@
 
         const useReal = el("use-real-api").checked;
         const endpoint = el("backend-url").value.trim();
+        const providerAtSend = selectedProvider;
         const t0 = performance.now();
 
         let result = null;
@@ -1347,16 +1451,28 @@
             const resp = await fetch(endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fala_recente: recentWindow, estado_atual: storyState }),
+              body: JSON.stringify({
+                fala_recente: recentWindow,
+                estado_atual: storyState,
+                provider: providerAtSend,
+              }),
             });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            if (!resp.ok) {
+              let detail = `HTTP ${resp.status}`;
+              try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (_) {}
+              throw new Error(detail);
+            }
             result = await resp.json();
-            el("mode-badge").textContent = "Gemini Decision 1 ativo";
+            el("mode-badge").classList.remove("badge-warn");
             el("mode-badge").classList.add("badge-live");
+            el("mode-badge").textContent = result.mode === "jev"
+              ? `Jev (${result.model || "jev-latest"})`
+              : "Gemini Decision 1 ativo";
           } catch (err) {
             el("backend-status").textContent = `Erro no backend (${err.message}) — usando simulador local.`;
             el("mode-badge").textContent = "Simulador (fallback)";
             el("mode-badge").classList.remove("badge-live");
+            el("mode-badge").classList.add("badge-warn");
             result = simulateDecisionModel(recentWindow, storyState);
           }
         } else {
@@ -1366,7 +1482,8 @@
 
         if (myReqId !== latestRequestId) return;
         const ms = Math.round(performance.now() - t0);
-        el("latency-readout").textContent = result.server_ms ? `${ms} ms (Gemini: ${result.server_ms} ms)` : `${ms} ms`;
+        const label = result.mode === "jev" ? "Jev" : "Gemini";
+        el("latency-readout").textContent = result.server_ms ? `${ms} ms (${label}: ${result.server_ms} ms)` : `${ms} ms`;
         applyEvaluation(result);
       }
 
@@ -1384,14 +1501,19 @@
         audioUploading = true;
         while (audioQueue.length > 0) {
           const blob = audioQueue.shift();
+          const providerAtSend = selectedProvider;
+          const providerLabel = providerAtSend === "jev" ? "Jev" : "Gemini";
           requestCounter += 1;
           el("req-counter").textContent = `req #${requestCounter}`;
-          el("mic-status").textContent = "⚡ Analisando frase no Gemini...";
+          el("mic-status").textContent = providerAtSend === "jev"
+            ? "⚡ Transcrevendo e avaliando no Jev..."
+            : "⚡ Analisando frase no Gemini...";
           const t0 = performance.now();
 
           const form = new FormData();
           form.append("audio", blob, "fala.wav");
           form.append("estado_atual", JSON.stringify(storyState));
+          form.append("provider", providerAtSend);
 
           try {
             const resp = await fetch("/api/evaluate-audio", { method: "POST", body: form });
@@ -1402,11 +1524,31 @@
             }
             const result = await resp.json();
             const ms = Math.round(performance.now() - t0);
-            el("latency-readout").textContent = `${ms} ms (Gemini: ${result.server_ms} ms)`;
-            el("mode-badge").textContent = "Gemini Decision 1 (áudio)";
+
+            if (result.skipped) {
+              el("latency-readout").textContent = `STT: ${result.stt_ms || 0} ms (silêncio)`;
+              el("mic-status").textContent = wantListening ? "🎙️ Ouvindo... fale sua próxima frase" : "";
+              continue;
+            }
+
+            el("mode-badge").classList.remove("badge-warn");
             el("mode-badge").classList.add("badge-live");
+
+            if (result.mode === "jev") {
+              el("latency-readout").textContent = `${ms} ms (STT: ${result.stt_ms || 0} ms · Jev: ${result.server_ms} ms)`;
+              el("mode-badge").textContent = `Jev (${result.model || "jev-latest"})`;
+            } else {
+              el("latency-readout").textContent = `${ms} ms (${providerLabel}: ${result.server_ms} ms)`;
+              el("mode-badge").textContent = "Gemini Decision 1 (áudio)";
+            }
+
             applyEvaluation(result);
-            el("stage-caption").textContent = `🎙️ ${el("pill-cenario").textContent} · ${el("pill-periodo").textContent} · ${el("pill-emocao").textContent} · ${el("pill-extras").textContent}`;
+            if (result.transcript) {
+              el("story-input").value = result.transcript;
+              el("stage-caption").textContent = `🎙️ "${result.transcript}"`;
+            } else {
+              el("stage-caption").textContent = `🎙️ ${el("pill-cenario").textContent} · ${el("pill-periodo").textContent} · ${el("pill-emocao").textContent} · ${el("pill-extras").textContent}`;
+            }
             el("mic-status").textContent = wantListening ? "🎙️ Ouvindo... fale sua próxima frase" : "";
           } catch (err) {
             el("mic-status").textContent = `⚠️ ${err.message}`;
@@ -1604,7 +1746,9 @@
         el("btn-mic").classList.add("mic-recording");
         el("mic-label").textContent = "Parar microfone";
         el("mic-status").textContent = "🎙️ Ouvindo... fale uma frase e faça uma pequena pausa";
-        el("stage-caption").textContent = "🎙️ Microfone ativo (WAV → Gemini Decision 1). Pode contar sua história!";
+        el("stage-caption").textContent = selectedProvider === "jev"
+          ? "🎙️ Microfone ativo (WAV → STT Gemini → TypeSafe Jev). Pode contar sua história!"
+          : "🎙️ Microfone ativo (WAV → Gemini Decision 1). Pode contar sua história!";
       }
 
       function startSpeechMic() {
@@ -1655,7 +1799,15 @@
       }
 
       function startMic() {
-        if (el("use-real-api").checked && el("use-direct-audio").checked) {
+        if (el("use-real-api").checked && selectedProvider === "jev" && healthState.ok && !healthState.jev_configured) {
+          el("mic-status").textContent = "⚠️ Adicione TYPESAFE_API_KEY no Cloud Run ou toque em ✦ Gemini.";
+          el("stage-caption").textContent = "⚠️ Jev precisa da variável TYPESAFE_API_KEY no Cloud Run (ou troque para ✦ Gemini no topo).";
+          return;
+        }
+        const canServerAudio = selectedProvider === "jev"
+          ? healthState.jev_audio_supported
+          : healthState.audio_supported;
+        if (el("use-real-api").checked && el("use-direct-audio").checked && canServerAudio) {
           startDirectAudioMic();
         } else {
           startSpeechMic();
@@ -1711,6 +1863,15 @@
         }
         tick();
       }
+
+      el("btn-provider-jev").addEventListener("click", () => {
+        selectedProvider = "jev";
+        updateProviderUI(true);
+      });
+      el("btn-provider-gemini").addEventListener("click", () => {
+        selectedProvider = "gemini";
+        updateProviderUI(true);
+      });
 
       el("btn-mic").addEventListener("click", () => wantListening ? stopMic() : startMic());
       el("btn-demo").addEventListener("click", runDemo);

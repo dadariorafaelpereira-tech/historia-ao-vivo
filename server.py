@@ -1,22 +1,27 @@
-"""Backend FastAPI do História ao Vivo — 100% Google (Gemini Decision 1 + Cloud Run).
+"""Backend FastAPI do História ao Vivo — TypeSafe Jev (jev-latest) + Gemini Decision 1.
 
-Usa a Gemini Decisions API (gemini-decision-1) para texto (/api/evaluate)
-e áudio direto (/api/evaluate-audio).
+Suporta dois motores System One intercambiáveis em tempo real:
+- `jev`: TypeSafe AI (`jev-latest` em https://api.typesafe.ai/v1/systemone).
+  Como o Jev aceita texto/JSON (e não áudio bruto), em `/api/evaluate-audio`
+  o trecho WAV é transcrito primeiro pelo Gemini 3.5 Flash-Lite (`GEMINI_API_KEY`)
+  e a transcrição é avaliada imediatamente pelo Jev (`TYPESAFE_API_KEY`).
+- `gemini`: Google Gemini Decisions API (`gemini-decision-1`), que avalia texto
+  e áudio direto em uma única chamada.
 
-Melhorias chave:
-- Mapeia audio/mp4 -> audio/m4a (enum oficial da Gemini Decisions API) além de suportar audio/wav e audio/webm.
-- Usa perguntas Choice de 3 estados (ativar / desativar / sem_mudanca) para todos os elementos,
-  evitando que personagens/clima/voo desliguem sozinhos entre uma frase e outra.
+Quando `provider="auto"` (padrão), usa Jev automaticamente se `TYPESAFE_API_KEY`
+estiver configurada; caso contrário usa Gemini Decision 1.
 """
 
 from __future__ import annotations
 
 import base64
+from contextlib import asynccontextmanager
 import json
 import os
+import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -34,9 +39,14 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent
 GEMINI_DECISIONS_URL = "https://generativelanguage.googleapis.com/v1beta/decisions"
 GEMINI_DECISION_MODEL = "gemini-decision-1"
+GEMINI_STT_MODEL = os.getenv("GEMINI_STT_MODEL", "gemini-3.5-flash-lite")
+TYPESAFE_SYSTEM_ONE_URL = "https://api.typesafe.ai/v1/systemone"
+JEV_MODEL = os.getenv("JEV_MODEL", "jev-latest")
 MAX_AUDIO_BYTES = 5 * 1024 * 1024
 
-# Enum oficial aceito pela Gemini Decisions API para blocos `audio`
+ProviderOption = Literal["auto", "gemini", "jev"]
+
+# Enum oficial aceito pela Gemini API para blocos `audio` / `inline_data`
 GEMINI_AUDIO_MIME_TYPES = {
     "audio/wav",
     "audio/mp3",
@@ -53,7 +63,37 @@ GEMINI_AUDIO_MIME_TYPES = {
     "audio/mulaw",
 }
 
-app = FastAPI(title="História ao Vivo — Gemini Decision 1 Backend")
+_http_client: httpx.AsyncClient | None = None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient(
+        timeout=20.0,
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+    )
+    try:
+        yield
+    finally:
+        await _http_client.aclose()
+        _http_client = None
+
+
+def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            timeout=20.0,
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+        )
+    return _http_client
+
+
+app = FastAPI(
+    title="História ao Vivo — Jev + Gemini Decision 1 Backend",
+    lifespan=lifespan,
+)
 
 allowed_origins = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
@@ -70,6 +110,7 @@ if allowed_origins:
 class EvaluateRequest(BaseModel):
     fala_recente: str = Field(..., min_length=1, max_length=2000)
     estado_atual: dict[str, Any] = Field(default_factory=dict)
+    provider: ProviderOption = "auto"
 
 
 def toggle_question(elemento: str, ativar_desc: str, desativar_desc: str) -> dict[str, Any]:
@@ -87,8 +128,8 @@ def toggle_question(elemento: str, ativar_desc: str, desativar_desc: str) -> dic
     }
 
 
-def build_gemini_questions() -> dict[str, Any]:
-    """Perguntas enxutas (~900 tokens) com `sem_mudanca` explícito para estabilidade total."""
+def build_questions() -> dict[str, Any]:
+    """Perguntas Choice com `sem_mudanca` explícito (mesmo formato aceito por Jev e Gemini)."""
     return {
         "cenario": {
             "type": "choice",
@@ -172,6 +213,7 @@ def build_gemini_questions() -> dict[str, Any]:
     }
 
 
+CHOICE_KEYS = ("cenario", "periodo", "protagonista", "emocao")
 TOGGLE_KEYS = {
     "heroi_presente",
     "animal_presente",
@@ -183,46 +225,33 @@ TOGGLE_KEYS = {
 }
 
 
-async def call_gemini_decisions(
-    input_blocks: list[dict[str, Any]], api_key: str
-) -> dict[str, Any]:
-    t0 = time.perf_counter()
-    payload = {
-        "model": GEMINI_DECISION_MODEL,
-        "input": input_blocks,
-        "questions": build_gemini_questions(),
-    }
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        resp = await client.post(
-            GEMINI_DECISIONS_URL,
-            headers={
-                "x-goog-api-key": api_key,
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-    if resp.status_code >= 400:
-        err_msg = ""
-        try:
-            err_body = resp.json()
-            err_msg = err_body.get("error", {}).get("message", "")
-        except Exception:
-            err_msg = resp.text[:160]
-        raise HTTPException(
-            status_code=502,
-            detail=f"Gemini Decisions API HTTP {resp.status_code}: {err_msg}",
-        )
+def extract_error_message(resp: httpx.Response) -> str:
+    try:
+        err_body = resp.json()
+        if isinstance(err_body, dict):
+            err = err_body.get("error")
+            if isinstance(err, dict) and err.get("message"):
+                return str(err["message"])[:180]
+            if isinstance(err, str) and err:
+                return err[:180]
+            if err_body.get("detail"):
+                return str(err_body["detail"])[:180]
+            if err_body.get("message"):
+                return str(err_body["message"])[:180]
+    except Exception:
+        pass
+    return resp.text[:160]
 
-    data = resp.json()
-    answers = data.get("answers", {})
-    elapsed_ms = round((time.perf_counter() - t0) * 1000)
 
+def parse_answers(answers: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     choices: dict[str, Any] = {}
     toggles: dict[str, Any] = {}
     for key, ans in answers.items():
+        if not isinstance(ans, dict):
+            continue
         choice_val = ans.get("choice")
         conf = float(ans.get("confidence", 0.0))
-        probs = ans.get("probabilities", {})
+        probs = ans.get("probabilities", {}) or {}
         if key in TOGGLE_KEYS:
             toggles[key] = {
                 "action": choice_val or "sem_mudanca",
@@ -235,15 +264,221 @@ async def call_gemini_decisions(
                 choices[key] = {"choice": None, "confidence": 0.0, "keep_current": True}
             else:
                 choices[key] = {"choice": choice_val, "confidence": conf}
+    return choices, toggles
+
+
+def build_no_change_result(mode: str, model: str, stt_ms: int = 0) -> dict[str, Any]:
+    return {
+        "mode": mode,
+        "model": model,
+        "server_ms": 0,
+        "stt_ms": stt_ms,
+        "stt_model": GEMINI_STT_MODEL,
+        "transcript": "",
+        "skipped": True,
+        "usage": None,
+        "choices": {
+            key: {"choice": None, "confidence": 0.0, "keep_current": True}
+            for key in CHOICE_KEYS
+        },
+        "toggles": {
+            key: {"action": "sem_mudanca", "confidence": 1.0, "p_ativar": 0.0, "p_desativar": 0.0}
+            for key in TOGGLE_KEYS
+        },
+    }
+
+
+def resolve_default_provider() -> str:
+    has_jev = bool(os.getenv("TYPESAFE_API_KEY"))
+    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    env_default = os.getenv("DEFAULT_PROVIDER", "auto").strip().lower()
+    if env_default == "gemini" and has_gemini:
+        return "gemini"
+    if env_default == "jev" and has_jev:
+        return "jev"
+    if has_jev:
+        return "jev"
+    if has_gemini:
+        return "gemini"
+    return "simulator"
+
+
+def resolve_provider(requested: str) -> str:
+    req = (requested or "auto").strip().lower()
+    if req not in {"auto", "gemini", "jev"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Parâmetro provider inválido. Use 'auto', 'jev' ou 'gemini'.",
+        )
+    if req == "auto":
+        resolved = resolve_default_provider()
+        if resolved == "simulator":
+            raise HTTPException(
+                status_code=503,
+                detail="Nenhuma chave de API configurada (TYPESAFE_API_KEY ou GEMINI_API_KEY).",
+            )
+        return resolved
+    return req
+
+
+async def call_gemini_decisions(
+    input_blocks: list[dict[str, Any]], api_key: str
+) -> dict[str, Any]:
+    t0 = time.perf_counter()
+    payload = {
+        "model": GEMINI_DECISION_MODEL,
+        "input": input_blocks,
+        "questions": build_questions(),
+    }
+    client = get_http_client()
+    try:
+        resp = await client.post(
+            GEMINI_DECISIONS_URL,
+            headers={
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha de rede na Gemini Decisions API: {exc.__class__.__name__}",
+        ) from exc
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gemini Decisions API HTTP {resp.status_code}: {extract_error_message(resp)}",
+        )
+
+    data = resp.json()
+    elapsed_ms = round((time.perf_counter() - t0) * 1000)
+    choices, toggles = parse_answers(data.get("answers", {}))
 
     return {
         "mode": "gemini",
-        "model": GEMINI_DECISION_MODEL,
+        "model": data.get("model") or GEMINI_DECISION_MODEL,
         "server_ms": elapsed_ms,
         "usage": data.get("usage"),
         "choices": choices,
         "toggles": toggles,
     }
+
+
+async def call_jev_system_one(
+    fala_recente: str, estado_atual: dict[str, Any], api_key: str
+) -> dict[str, Any]:
+    t0 = time.perf_counter()
+    payload = {
+        "model": JEV_MODEL,
+        "state": {
+            "estado_atual": estado_atual,
+            "trecho_falado_pt_br": fala_recente,
+        },
+        "questions": build_questions(),
+    }
+    client = get_http_client()
+    try:
+        resp = await client.post(
+            TYPESAFE_SYSTEM_ONE_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha de rede na TypeSafe Jev API: {exc.__class__.__name__}",
+        ) from exc
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"TypeSafe Jev API HTTP {resp.status_code}: {extract_error_message(resp)}",
+        )
+
+    data = resp.json()
+    elapsed_ms = round((time.perf_counter() - t0) * 1000)
+    choices, toggles = parse_answers(data.get("answers", {}))
+
+    return {
+        "mode": "jev",
+        "model": data.get("model") or JEV_MODEL,
+        "server_ms": elapsed_ms,
+        "usage": data.get("usage"),
+        "choices": choices,
+        "toggles": toggles,
+    }
+
+
+async def transcribe_audio_with_gemini(
+    b64_audio: str, mime_type: str, api_key: str
+) -> tuple[str, int]:
+    t0 = time.perf_counter()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_STT_MODEL}:generateContent"
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": (
+                            "Transcreva exatamente em português do Brasil o que foi falado neste áudio. "
+                            "Retorne apenas as palavras faladas, sem aspas, sem colchetes e sem comentários. "
+                            "Se houver apenas silêncio ou ruído sem fala humana, responda sem nenhum texto."
+                        )
+                    },
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": b64_audio,
+                        }
+                    },
+                ]
+            }
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 200,
+        },
+    }
+    client = get_http_client()
+    try:
+        resp = await client.post(
+            url,
+            headers={
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha de rede no Gemini STT ({GEMINI_STT_MODEL}): {exc.__class__.__name__}",
+        ) from exc
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gemini STT ({GEMINI_STT_MODEL}) HTTP {resp.status_code}: {extract_error_message(resp)}",
+        )
+
+    data = resp.json()
+    stt_ms = round((time.perf_counter() - t0) * 1000)
+    text_parts: list[str] = []
+    for cand in data.get("candidates", []):
+        content = cand.get("content") or {}
+        for part in content.get("parts", []):
+            txt = part.get("text")
+            if isinstance(txt, str) and txt.strip():
+                text_parts.append(txt.strip())
+
+    transcript = " ".join(text_parts).strip().strip('"').strip("'").strip()
+    cleaned = re.sub(r"[\[\(][^\]\)]{1,32}[\]\)]", "", transcript).strip()
+    if not cleaned or not re.search(r"[A-Za-zÀ-ÿ0-9]", cleaned):
+        transcript = ""
+    else:
+        transcript = cleaned
+    return transcript, stt_ms
 
 
 def sanitize_audio_mime(raw_mime: str | None) -> str:
@@ -286,18 +521,32 @@ async def serve_icon() -> FileResponse:
 async def health() -> dict[str, Any]:
     has_gemini = bool(os.getenv("GEMINI_API_KEY"))
     has_jev = bool(os.getenv("TYPESAFE_API_KEY"))
-    provider = "gemini" if has_gemini else ("jev" if has_jev else "simulator")
+    provider = resolve_default_provider()
     return {
         "ok": True,
         "provider": provider,
+        "default_provider": provider,
         "gemini_configured": has_gemini,
         "jev_configured": has_jev,
         "audio_supported": has_gemini,
+        "jev_audio_supported": has_gemini and has_jev,
+        "stt_model": GEMINI_STT_MODEL,
     }
 
 
 @app.post("/api/evaluate")
 async def evaluate_story(req: EvaluateRequest) -> dict[str, Any]:
+    provider = resolve_provider(req.provider)
+
+    if provider == "jev":
+        jev_key = os.getenv("TYPESAFE_API_KEY")
+        if not jev_key:
+            raise HTTPException(
+                status_code=503,
+                detail="TYPESAFE_API_KEY não configurada no Cloud Run.",
+            )
+        return await call_jev_system_one(req.fala_recente, req.estado_atual, jev_key)
+
     gemini_key = os.getenv("GEMINI_API_KEY")
     if not gemini_key:
         raise HTTPException(
@@ -322,12 +571,27 @@ async def evaluate_story(req: EvaluateRequest) -> dict[str, Any]:
 async def evaluate_story_audio(
     audio: UploadFile = File(...),
     estado_atual: str = Form(default="{}"),
+    provider: str = Form(default="auto"),
 ) -> dict[str, Any]:
+    selected_provider = resolve_provider(provider)
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_key:
+    jev_key = os.getenv("TYPESAFE_API_KEY")
+
+    if selected_provider == "jev":
+        if not jev_key:
+            raise HTTPException(
+                status_code=503,
+                detail="TYPESAFE_API_KEY não configurada no Cloud Run.",
+            )
+        if not gemini_key:
+            raise HTTPException(
+                status_code=503,
+                detail="GEMINI_API_KEY não configurada para transcrever o áudio antes de enviar ao Jev.",
+            )
+    elif not gemini_key:
         raise HTTPException(
             status_code=503,
-            detail="GEMINI_API_KEY não configurada — áudio direto requer Gemini Decision 1.",
+            detail="GEMINI_API_KEY não configurada — áudio direto requer Gemini.",
         )
 
     mime_type = sanitize_audio_mime(audio.content_type)
@@ -345,6 +609,20 @@ async def evaluate_story_audio(
         parsed_state = {}
 
     b64_audio = base64.b64encode(audio_bytes).decode("ascii")
+
+    if selected_provider == "jev":
+        transcript, stt_ms = await transcribe_audio_with_gemini(
+            b64_audio, mime_type, gemini_key
+        )
+        if not transcript:
+            return build_no_change_result("jev", JEV_MODEL, stt_ms=stt_ms)
+
+        result = await call_jev_system_one(transcript, parsed_state, jev_key)
+        result["transcript"] = transcript
+        result["stt_ms"] = stt_ms
+        result["stt_model"] = GEMINI_STT_MODEL
+        return result
+
     blocks = [
         {
             "type": "text",
@@ -360,3 +638,4 @@ async def evaluate_story_audio(
         },
     ]
     return await call_gemini_decisions(blocks, gemini_key)
+
