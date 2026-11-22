@@ -1,24 +1,26 @@
-# História ao Vivo — MVP (Voz + Jev System One)
+# História ao Vivo — Voz + Jev (System One)
 
-Protótipo navegável de um aplicativo de histórias infantis em tempo real por voz/texto, onde um modelo **System One** (**Jev**, da TypeSafe AI) classifica o estado da cena (`Choice` + `Noul`) e um palco ilustrado em camadas SVG reage instantaneamente.
+Aplicativo web/PWA de histórias infantis em tempo real por voz ou texto. Um modelo **System One** (**Jev**, da TypeSafe AI) avalia a fala recente junto do estado anterior da história e transforma um palco ilustrado em camadas instantaneamente.
 
-## Arquivos
+## O que o palco suporta
 
-- `index.html` — Frontend PWA autocontido (palco SVG em camadas animadas, captura por microfone via Web Speech API `pt-BR`, simulação de narração palavra por palavra, motor com limiar de confiança `0.70` e histerese `0.30 / 0.75`, e efeitos sonoros sintetizados).
-- `manifest.json` — Manifesto PWA para instalar na tela inicial do celular.
-- `server.py` — Backend FastAPI que serve o `index.html` e expõe `POST /api/evaluate` conectado ao `AsyncTypeSafeClient(model="jev-latest")`.
-- `requirements.txt` — Dependências Python do backend.
+- **7 cenários:** `quarto`, `floresta`, `cidade`, `praia`, `castelo`, `espaco`, `parque`
+- **3 horários / iluminações:** `dia`, `entardecer`, `noite`
+- **Protagonista:** `menino` ou `menina` com **4 emoções** (`neutro`, `feliz`, `triste`, `surpreso`)
+- **Personagens e criaturas (`Noul`):** `heroi_presente`, `animal_presente` (cachorrinho), `dragao_presente`
+- **Ações e clima (`Noul`):** `personagens_voando`, `chuva`, `neve`, `arco_iris`
 
-## Como testar
+## Deploy grátis com HTTPS na Render (recomendado para usar no celular)
 
-### 1. Modo rápido (sem API key — simulador local)
-Basta abrir `index.html` no navegador ou servir com:
+1. Acesse https://render.com e faça login com sua conta GitHub.
+2. Clique em **New + → Blueprint** e selecione este repositório (`dadariorafaelpereira-tech/historia-ao-vivo`).
+3. O arquivo `render.yaml` configura tudo automaticamente e pede apenas a variável **`TYPESAFE_API_KEY`**.
+4. Cole sua chave da TypeSafe direto no painel da Render e clique em **Apply**.
+5. Abra o link `https://historia-ao-vivo.onrender.com` (ou o subdomínio gerado) no navegador do celular!
 
-```bash
-python3 -m http.server 8000
-```
+> **Segurança:** nunca faça commit de arquivos `.env` ou chaves no GitHub. Coloque `TYPESAFE_API_KEY` apenas nas *Environment Variables* da Render ou em um `.env` local na sua VPS.
 
-### 2. Modo completo com Jev real
+## Rodar localmente ou em VPS
 
 ```bash
 python3 -m venv .venv
@@ -28,4 +30,9 @@ export TYPESAFE_API_KEY="sua-chave-typesafe"
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-> **Uso no celular com microfone:** navegadores móveis exigem **HTTPS** para liberar o microfone (`SpeechRecognition`). Ao hospedar em uma VPS (com Nginx/Caddy + Let's Encrypt) ou via túnel HTTPS, abra no navegador do celular e toque em *Adicionar à Tela Inicial*.
+Ou via Docker:
+
+```bash
+docker build -t historia-ao-vivo .
+docker run -p 8000:8000 -e TYPESAFE_API_KEY="sua-chave-typesafe" historia-ao-vivo
+```
