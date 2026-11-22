@@ -16,10 +16,14 @@ from __future__ import annotations
 
 import base64
 from contextlib import asynccontextmanager
+import io
 import json
+import math
 import os
 import re
+import struct
 import time
+import wave
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +47,7 @@ GEMINI_STT_MODEL = os.getenv("GEMINI_STT_MODEL", "gemini-3.5-flash-lite")
 TYPESAFE_SYSTEM_ONE_URL = "https://api.typesafe.ai/v1/systemone"
 JEV_MODEL = os.getenv("JEV_MODEL", "jev-latest")
 MAX_AUDIO_BYTES = 5 * 1024 * 1024
+MIN_WAV_RMS = 0.004  # Abaixo disso é silêncio digital/ambiente; pula STT e modelo (<1 ms)
 
 ProviderOption = Literal["auto", "gemini", "jev"]
 
@@ -117,23 +122,23 @@ def toggle_question(elemento: str, ativar_desc: str, desativar_desc: str) -> dic
     return {
         "type": "choice",
         "instructions": (
-            f"O trecho falado menciona alguma mudança sobre {elemento}? "
-            "Escolha sem_mudanca se o trecho não falar sobre isso."
+            f"O trecho falado cita {elemento} (presente/acontecendo ou saindo/parando)? "
+            "Se não citar, escolha sem_mudanca."
         ),
         "criteria": {
             "ativar": ativar_desc,
             "desativar": desativar_desc,
-            "sem_mudanca": f"O trecho não menciona {elemento}; manter o estado anterior.",
+            "sem_mudanca": f"Não cita {elemento}; manter estado anterior.",
         },
     }
 
 
 def build_questions() -> dict[str, Any]:
-    """Perguntas Choice com `sem_mudanca` explícito (mesmo formato aceito por Jev e Gemini)."""
+    """Perguntas Choice enxutas com `sem_mudanca` explícito (compatível com Jev e Gemini)."""
     return {
         "cenario": {
             "type": "choice",
-            "instructions": "O trecho menciona algum destes lugares/cenários? Se não mencionar lugar, escolha sem_mudanca.",
+            "instructions": "O trecho menciona algum destes cenários? Se não mencionar lugar, escolha sem_mudanca.",
             "criteria": {
                 "quarto": "Quarto, casa, cama, sala ou ambiente interno.",
                 "floresta": "Floresta, mata, bosque, árvores ou selva.",
@@ -142,72 +147,72 @@ def build_questions() -> dict[str, Any]:
                 "castelo": "Castelo, reino, palácio ou torre medieval.",
                 "espaco": "Espaço sideral, planetas, lua, foguete ou galáxia.",
                 "parque": "Parque, jardim, praça, campo ou flores.",
-                "sem_mudanca": "Não menciona lugar ou cenário.",
+                "sem_mudanca": "Não menciona cenário.",
             },
         },
         "periodo": {
             "type": "choice",
-            "instructions": "O trecho menciona horário do dia ou iluminação do céu? Se não mencionar, escolha sem_mudanca.",
+            "instructions": "O trecho menciona horário do dia ou luz do céu? Se não mencionar, escolha sem_mudanca.",
             "criteria": {
                 "dia": "Manhã, dia claro, sol brilhando ou amanheceu.",
                 "entardecer": "Pôr do sol, fim de tarde, entardecendo ou céu alaranjado.",
                 "noite": "Noite, anoiteceu, escuro, lua, estrelas ou madrugada.",
-                "sem_mudanca": "Não menciona horário nem luz do céu.",
+                "sem_mudanca": "Não menciona horário.",
             },
         },
         "protagonista": {
             "type": "choice",
-            "instructions": "O trecho identifica se a criança protagonista é menino ou menina? Se não mencionar, escolha sem_mudanca.",
+            "instructions": "O trecho nomeia explicitamente se a criança é menino ou menina? Se não, escolha sem_mudanca.",
             "criteria": {
-                "menino": "Menino, garoto, filho ou príncipe.",
-                "menina": "Menina, garota, filha ou princesa.",
-                "sem_mudanca": "Não menciona ou não muda o protagonista.",
+                "menino": "Diz menino, garoto, filho ou príncipe.",
+                "menina": "Diz menina, garota, filha ou princesa.",
+                "sem_mudanca": "Não diz menino nem menina.",
             },
         },
         "emocao": {
             "type": "choice",
-            "instructions": "Qual emoção da criança aparece no trecho? Se não houver emoção explícita, escolha sem_mudanca.",
+            "instructions": "Qual emoção da criança aparece no trecho? Se nenhuma, escolha sem_mudanca.",
             "criteria": {
                 "neutro": "Calmo, tranquilo ou normal.",
                 "feliz": "Feliz, alegre, sorrindo, rindo, empolgado ou animado.",
                 "triste": "Triste, chorando, solitário, cabisbaixo ou chateado.",
                 "surpreso": "Surpreso, espantado, maravilhado, assustado ou admirado.",
-                "sem_mudanca": "Não expressa mudança de emoção.",
+                "sem_mudanca": "Não expressa emoção.",
             },
         },
         "heroi_presente": toggle_question(
             "super-herói",
-            "Um super-herói ou heroína chegou, apareceu ou está atuando na cena.",
-            "O super-herói foi embora, sumiu, se despediu ou a criança ficou sozinha sem ele.",
+            "Super-herói ou heroína chegou, apareceu ou está na cena.",
+            "Super-herói foi embora, sumiu ou saiu da cena.",
         ),
         "animal_presente": toggle_question(
-            "cachorro ou animal amigo",
-            "Um cachorrinho, cão, gato ou animal amigo apareceu ou está junto na cena.",
-            "O animal amigo foi embora, sumiu ou saiu da cena.",
+            "cachorrinho/animal",
+            "Cachorrinho, cão, gato ou animal amigo apareceu ou está na cena.",
+            "Animal amigo foi embora, sumiu ou saiu da cena.",
         ),
         "dragao_presente": toggle_question(
-            "dragão ou criatura mágica",
-            "Um dragão, dinossauro ou criatura mágica apareceu ou está na cena.",
-            "O dragão/criatura foi embora, sumiu ou saiu da cena.",
+            "dragão/criatura",
+            "Dragão, dinossauro ou criatura mágica apareceu ou está na cena.",
+            "Dragão/criatura foi embora, sumiu ou saiu da cena.",
         ),
         "personagens_voando": toggle_question(
-            "voar ou flutuar",
-            "Os personagens começaram a voar, continuaram voando, subiram ao céu ou estão flutuando.",
-            "Os personagens pousaram, desceram ao chão, aterrissaram, deitaram ou voltaram a andar no chão.",
+            "voar/flutuar",
+            "Estão voando, começaram a voar, subiram ao céu ou flutuando.",
+            "Pousaram, desceram ao chão, aterrissaram ou voltaram a andar no chão.",
         ),
         "chuva": toggle_question(
-            "chuva ou tempestade",
-            "Começou a chover, está chovendo ou há tempestade.",
+            "chuva/tempestade",
+            "Está chovendo, começou a chover ou há chuva/tempestade.",
             "A chuva parou, o tempo limpou ou abriu sol sem chuva.",
         ),
         "neve": toggle_question(
-            "neve ou flocos de gelo",
-            "Começou a nevar, está nevando ou há flocos de neve caindo.",
+            "neve/gelo",
+            "Está nevando, começou a nevar ou há flocos de neve caindo.",
             "A neve parou ou o tempo esquentou sem neve.",
         ),
         "arco_iris": toggle_question(
             "arco-íris",
-            "Apareceu um arco-íris colorido no céu.",
+            "Há ou apareceu um arco-íris no céu.",
             "O arco-íris sumiu ou desapareceu.",
         ),
     }
@@ -412,6 +417,32 @@ async def call_jev_system_one(
     }
 
 
+def wav_is_silent(audio_bytes: bytes, mime_type: str) -> bool:
+    """Detecta silêncio em WAV 16-bit PCM em <1 ms para evitar alucinação de STT e chamadas inúteis."""
+    if mime_type != "audio/wav":
+        return False
+    try:
+        with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+            if wf.getsampwidth() != 2:
+                return False
+            frames = wf.readframes(wf.getnframes())
+    except Exception:
+        return False
+    n_samples = len(frames) // 2
+    if n_samples == 0:
+        return True
+    # Amostra a cada 4 samples para ser instantâneo (~0.2 ms em 4 s de áudio 16 kHz)
+    step = 4
+    sq_sum = 0.0
+    count = 0
+    for i in range(0, n_samples, step):
+        val = struct.unpack_from("<h", frames, i * 2)[0] / 32768.0
+        sq_sum += val * val
+        count += 1
+    rms = math.sqrt(sq_sum / max(1, count))
+    return rms < MIN_WAV_RMS
+
+
 async def transcribe_audio_with_gemini(
     b64_audio: str, mime_type: str, api_key: str
 ) -> tuple[str, int]:
@@ -423,9 +454,9 @@ async def transcribe_audio_with_gemini(
                 "parts": [
                     {
                         "text": (
-                            "Transcreva exatamente em português do Brasil o que foi falado neste áudio. "
-                            "Retorne apenas as palavras faladas, sem aspas, sem colchetes e sem comentários. "
-                            "Se houver apenas silêncio ou ruído sem fala humana, responda sem nenhum texto."
+                            "Transcreva exatamente em português do Brasil o que foi falado neste áudio de história infantil. "
+                            "Retorne APENAS as palavras faladas, sem aspas nem comentários. "
+                            "Se houver apenas silêncio, ruído ou nenhuma palavra inteligível, responda exatamente: SILENCIO"
                         )
                     },
                     {
@@ -438,7 +469,7 @@ async def transcribe_audio_with_gemini(
             }
         ],
         "generationConfig": {
-            "maxOutputTokens": 200,
+            "maxOutputTokens": 120,
         },
     }
     client = get_http_client()
@@ -474,7 +505,12 @@ async def transcribe_audio_with_gemini(
 
     transcript = " ".join(text_parts).strip().strip('"').strip("'").strip()
     cleaned = re.sub(r"[\[\(][^\]\)]{1,32}[\]\)]", "", transcript).strip()
-    if not cleaned or not re.search(r"[A-Za-zÀ-ÿ0-9]", cleaned):
+    upper_clean = cleaned.upper().strip(".!?,;:")
+    if (
+        not cleaned
+        or upper_clean in {"SILENCIO", "SILÊNCIO", "VAZIO", "NADA", "RUÍDO", "RUIDO"}
+        or not re.search(r"[A-Za-zÀ-ÿ0-9]", cleaned)
+    ):
         transcript = ""
     else:
         transcript = cleaned
@@ -600,6 +636,13 @@ async def evaluate_story_audio(
         raise HTTPException(status_code=400, detail="Arquivo de áudio vazio.")
     if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Trecho de áudio excede 5 MB.")
+
+    if wav_is_silent(audio_bytes, mime_type):
+        return build_no_change_result(
+            selected_provider,
+            JEV_MODEL if selected_provider == "jev" else GEMINI_DECISION_MODEL,
+            stt_ms=0,
+        )
 
     try:
         parsed_state = json.loads(estado_atual)

@@ -1680,6 +1680,7 @@
         isSpeaking = false;
         speechBuffer = [];
         preRollBuffer = [];
+        let noiseFloor = 0.004;
 
         captureSource = captureCtx.createMediaStreamSource(mediaStream);
         captureProcessor = captureCtx.createScriptProcessor(4096, 1, 1);
@@ -1690,7 +1691,7 @@
           const copy = new Float32Array(input.length);
           copy.set(input);
 
-          // Calcula volume (RMS) para barra visual e detecção de voz (VAD)
+          // Calcula volume (RMS) para barra visual e detecção adaptativa de voz (VAD)
           let sum = 0;
           for (let i = 0; i < copy.length; i++) sum += copy[i] * copy[i];
           const rms = Math.sqrt(sum / copy.length);
@@ -1698,9 +1699,9 @@
           el("vu-bar").style.width = `${vuPct}%`;
 
           const now = Date.now();
-          const VOICE_THRESHOLD = 0.015;
+          const voiceThreshold = Math.max(0.010, noiseFloor * 2.5);
 
-          if (rms > VOICE_THRESHOLD) {
+          if (rms > voiceThreshold) {
             if (!isSpeaking) {
               isSpeaking = true;
               speechStartAt = now;
@@ -1711,22 +1712,25 @@
             }
             lastVoiceAt = now;
 
-            // Se falar sem pausar por 4.2s, envia o bloco mantendo overlap para não cortar palavras
-            if (now - speechStartAt >= 4200) {
+            // Se falar sem pausar por 3.2s, envia mantendo overlap para não cortar palavras
+            if (now - speechStartAt >= 3200) {
               flushSpeechSegment(true);
               speechStartAt = now;
             }
           } else {
+            if (!isSpeaking) {
+              noiseFloor = Math.max(0.002, Math.min(0.012, noiseFloor * 0.92 + rms * 0.08));
+            }
             // Mantém pré-buffer de ~0.4s para nunca cortar a primeira sílaba
             preRollBuffer.push(copy);
             if (preRollBuffer.length > 4) preRollBuffer.shift();
 
             if (isSpeaking) {
               speechBuffer.push(copy);
-              // Pausa natural de 650 ms após falar -> envia imediatamente!
-              if (now - lastVoiceAt >= 650) {
+              // Pausa natural de 450 ms após falar -> envia imediatamente!
+              if (now - lastVoiceAt >= 450) {
                 isSpeaking = false;
-                if (now - speechStartAt >= 350) {
+                if (now - speechStartAt >= 300) {
                   flushSpeechSegment(false);
                 } else {
                   speechBuffer = [];
@@ -1846,16 +1850,16 @@
           const partial = words.slice(0, wordIdx).join(" ");
           el("story-input").value = partial;
           el("stage-caption").textContent = partial;
-          if (wordIdx % 3 === 0 || wordIdx === words.length) evaluateText(partial);
+          if (wordIdx % 4 === 0 || wordIdx === words.length) evaluateText(partial);
 
           if (wordIdx < words.length) {
-            demoTimer = setTimeout(tick, 185);
+            demoTimer = setTimeout(tick, 220);
           } else {
             stepIdx += 1;
             if (stepIdx < DEMO_STEPS.length) {
               words = DEMO_STEPS[stepIdx].split(" ");
               wordIdx = 0;
-              demoTimer = setTimeout(tick, 1800);
+              demoTimer = setTimeout(tick, 1900);
             } else {
               stopDemo();
             }
@@ -1899,6 +1903,8 @@
       el("btn-reset").addEventListener("click", () => {
         stopDemo();
         stopMic();
+        audioQueue = [];
+        latestRequestId += 1;
         storyState = { ...INITIAL_STATE };
         lastRawEval = null;
         el("story-input").value = "";
