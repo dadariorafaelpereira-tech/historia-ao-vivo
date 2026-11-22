@@ -14,6 +14,7 @@ estiver configurada; caso contrário usa Gemini Decision 1.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from contextlib import asynccontextmanager
 import io
@@ -48,8 +49,37 @@ TYPESAFE_SYSTEM_ONE_URL = "https://api.typesafe.ai/v1/systemone"
 JEV_MODEL = os.getenv("JEV_MODEL", "jev-latest")
 MAX_AUDIO_BYTES = 5 * 1024 * 1024
 MIN_WAV_RMS = 0.004  # Abaixo disso é silêncio digital/ambiente; pula STT e modelo (<1 ms)
+MAX_REF_IMAGE_B64 = 1_200_000  # ~900 KB decodificado
+
+IMAGE_MODELS: dict[str, str] = {
+    "nb2-lite": "gemini-3.1-flash-lite-image",
+    "nb21": "gemini-nano-banana-2.1",
+}
+
+IMAGE_STYLES: dict[str, str] = {
+    "livro": (
+        "Ilustração encantadora de livro infantil moderno, cores vibrantes, "
+        "iluminação mágica e expressões acolhedoras, acabamento cinematográfico."
+    ),
+    "aquarela": (
+        "Ilustração delicada em aquarela artesanal de livro de histórias infantis, "
+        "pinceladas suaves, luz quente e atmosfera poética."
+    ),
+    "3d": (
+        "Animação 3D estilizada de filme infantil (estilo Pixar/Disney), "
+        "iluminação volumétrica suave, personagens muito expressivos e cenário detalhado."
+    ),
+    "anime": (
+        "Ilustração estilo Studio Ghibli de conto infantil mágico, "
+        "céu luminoso, traço delicado e paisagem cheia de vida."
+    ),
+}
+
+ALLOWED_REF_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp"}
 
 ProviderOption = Literal["auto", "gemini", "jev"]
+ImageModelOption = Literal["nb2-lite", "nb21"]
+ImageStyleOption = Literal["livro", "aquarela", "3d", "anime"]
 
 # Enum oficial aceito pela Gemini API para blocos `audio` / `inline_data`
 GEMINI_AUDIO_MIME_TYPES = {
@@ -96,7 +126,7 @@ def get_http_client() -> httpx.AsyncClient:
 
 
 app = FastAPI(
-    title="História ao Vivo — Jev + Gemini Decision 1 Backend",
+    title="História ao Vivo — Jev + Gemini + Nano Banana Backend",
     lifespan=lifespan,
 )
 
@@ -118,6 +148,16 @@ class EvaluateRequest(BaseModel):
     provider: ProviderOption = "auto"
 
 
+class GenerateImageRequest(BaseModel):
+    fala_atual: str = Field(..., min_length=1, max_length=1200)
+    historico: list[str] = Field(default_factory=list, max_length=8)
+    estado_atual: dict[str, Any] = Field(default_factory=dict)
+    image_model: ImageModelOption = "nb2-lite"
+    estilo: ImageStyleOption = "livro"
+    reference_image_b64: str | None = Field(default=None, max_length=MAX_REF_IMAGE_B64)
+    reference_mime_type: str | None = Field(default="image/jpeg", max_length=40)
+
+
 def toggle_question(elemento: str, ativar_desc: str, desativar_desc: str) -> dict[str, Any]:
     return {
         "type": "choice",
@@ -136,6 +176,18 @@ def toggle_question(elemento: str, ativar_desc: str, desativar_desc: str) -> dic
 def build_questions() -> dict[str, Any]:
     """Perguntas Choice enxutas com `sem_mudanca` explícito (compatível com Jev e Gemini)."""
     return {
+        "nova_cena": {
+            "type": "choice",
+            "instructions": (
+                "O trecho falado descreve algo visual para ilustrar na história "
+                "(qualquer personagem como menino, menina, papai, mamãe, animal, dragão; "
+                "qualquer lugar como lua, foguete, casa, praia, floresta; ação, objeto ou clima)?"
+            ),
+            "criteria": {
+                "sim": "Tem conteúdo visual, personagem, lugar, objeto, destino ou ação para desenhar.",
+                "nao": "Apenas ruído, hesitação, saudação ou frase vazia sem nada visual novo.",
+            },
+        },
         "cenario": {
             "type": "choice",
             "instructions": "O trecho menciona algum destes cenários? Se não mencionar lugar, escolha sem_mudanca.",
@@ -236,28 +288,38 @@ def extract_error_message(resp: httpx.Response) -> str:
         if isinstance(err_body, dict):
             err = err_body.get("error")
             if isinstance(err, dict) and err.get("message"):
-                return str(err["message"])[:180]
+                return str(err["message"])[:220]
             if isinstance(err, str) and err:
-                return err[:180]
+                return err[:220]
             if err_body.get("detail"):
-                return str(err_body["detail"])[:180]
+                return str(err_body["detail"])[:220]
             if err_body.get("message"):
-                return str(err_body["message"])[:180]
+                return str(err_body["message"])[:220]
     except Exception:
         pass
-    return resp.text[:160]
+    return resp.text[:180]
 
 
-def parse_answers(answers: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def parse_answers(
+    answers: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     choices: dict[str, Any] = {}
     toggles: dict[str, Any] = {}
+    scene_change: dict[str, Any] = {"should_generate": True, "confidence": 0.5}
     for key, ans in answers.items():
         if not isinstance(ans, dict):
             continue
         choice_val = ans.get("choice")
         conf = float(ans.get("confidence", 0.0))
         probs = ans.get("probabilities", {}) or {}
-        if key in TOGGLE_KEYS:
+        if key == "nova_cena":
+            p_sim = float(probs.get("sim", conf if choice_val == "sim" else 1.0 - conf))
+            scene_change = {
+                "should_generate": choice_val == "sim" or p_sim >= 0.55,
+                "confidence": conf,
+                "p_sim": round(p_sim, 3),
+            }
+        elif key in TOGGLE_KEYS:
             toggles[key] = {
                 "action": choice_val or "sem_mudanca",
                 "confidence": conf,
@@ -269,7 +331,7 @@ def parse_answers(answers: dict[str, Any]) -> tuple[dict[str, Any], dict[str, An
                 choices[key] = {"choice": None, "confidence": 0.0, "keep_current": True}
             else:
                 choices[key] = {"choice": choice_val, "confidence": conf}
-    return choices, toggles
+    return choices, toggles, scene_change
 
 
 def build_no_change_result(mode: str, model: str, stt_ms: int = 0) -> dict[str, Any]:
@@ -358,7 +420,7 @@ async def call_gemini_decisions(
 
     data = resp.json()
     elapsed_ms = round((time.perf_counter() - t0) * 1000)
-    choices, toggles = parse_answers(data.get("answers", {}))
+    choices, toggles, scene_change = parse_answers(data.get("answers", {}))
 
     return {
         "mode": "gemini",
@@ -367,6 +429,7 @@ async def call_gemini_decisions(
         "usage": data.get("usage"),
         "choices": choices,
         "toggles": toggles,
+        "scene_visual_change": scene_change,
     }
 
 
@@ -405,7 +468,7 @@ async def call_jev_system_one(
 
     data = resp.json()
     elapsed_ms = round((time.perf_counter() - t0) * 1000)
-    choices, toggles = parse_answers(data.get("answers", {}))
+    choices, toggles, scene_change = parse_answers(data.get("answers", {}))
 
     return {
         "mode": "jev",
@@ -414,6 +477,131 @@ async def call_jev_system_one(
         "usage": data.get("usage"),
         "choices": choices,
         "toggles": toggles,
+        "scene_visual_change": scene_change,
+    }
+
+
+async def call_nano_banana_image(
+    req: GenerateImageRequest, api_key: str
+) -> dict[str, Any]:
+    model_id = IMAGE_MODELS[req.image_model]
+    style_desc = IMAGE_STYLES[req.estilo]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+
+    history_clean = [h.strip() for h in req.historico[-5:] if isinstance(h, str) and h.strip()]
+    context_block = ""
+    if history_clean:
+        context_block = (
+            "Contexto anterior da história (mantenha os personagens e elementos que ainda fazem sentido na cena):\n- "
+            + "\n- ".join(history_clean)
+            + "\n\n"
+        )
+
+    use_ref = bool(
+        req.image_model == "nb21"
+        and req.reference_image_b64
+        and req.reference_mime_type in ALLOWED_REF_IMAGE_MIMES
+    )
+    ref_instruction = (
+        "Use a imagem de referência anexada para manter exatamente a mesma aparência, "
+        "rosto e estilo visual dos personagens já apresentados, mudando a cena e ação conforme o novo momento da história.\n"
+        if use_ref
+        else ""
+    )
+
+    prompt = (
+        f"{style_desc}\n"
+        f"{ref_instruction}"
+        f"{context_block}"
+        f"Cena atual a ilustrar agora (em destaque principal):\n{req.fala_atual.strip()}\n\n"
+        "Regras visuais obrigatórias:\n"
+        "- Enquadramento amplo cinematográfico 16:9, adequado para crianças.\n"
+        "- Mostre claramente TODOS os personagens, lugares e objetos citados na cena atual e no contexto ativo.\n"
+        "- NÃO escreva nenhum texto, letra, legenda, placa escrita ou balão de fala na imagem.\n"
+    )
+
+    parts: list[dict[str, Any]] = []
+    if use_ref and req.reference_image_b64:
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": req.reference_mime_type,
+                    "data": req.reference_image_b64,
+                }
+            }
+        )
+    parts.append({"text": prompt})
+
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE"],
+            "imageConfig": {
+                "aspectRatio": "16:9",
+                "imageSize": "1K",
+            },
+        },
+    }
+
+    t0 = time.perf_counter()
+    client = get_http_client()
+    try:
+        resp = await client.post(
+            url,
+            headers={
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=45.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha de rede no {model_id}: {exc.__class__.__name__}",
+        ) from exc
+
+    if resp.status_code >= 400:
+        msg = extract_error_message(resp)
+        if resp.status_code in (403, 429):
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=f"{model_id} indisponível (HTTP {resp.status_code}): {msg}",
+            )
+        raise HTTPException(
+            status_code=502,
+            detail=f"{model_id} HTTP {resp.status_code}: {msg}",
+        )
+
+    data = resp.json()
+    image_ms = round((time.perf_counter() - t0) * 1000)
+
+    img_b64: str | None = None
+    img_mime = "image/png"
+    for cand in data.get("candidates", []):
+        content = cand.get("content") or {}
+        for part in content.get("parts", []):
+            if part.get("thought") is True:
+                continue
+            inline = part.get("inlineData") or part.get("inline_data")
+            if isinstance(inline, dict) and inline.get("data"):
+                img_b64 = inline["data"]
+                img_mime = inline.get("mimeType") or inline.get("mime_type") or "image/png"
+
+    if not img_b64:
+        raise HTTPException(
+            status_code=502,
+            detail=f"{model_id} não retornou imagem para esta frase.",
+        )
+
+    return {
+        "ok": True,
+        "image_model": req.image_model,
+        "model_id": model_id,
+        "mime_type": img_mime,
+        "image_b64": img_b64,
+        "image_ms": image_ms,
+        "used_reference": use_ref,
     }
 
 
@@ -566,8 +754,21 @@ async def health() -> dict[str, Any]:
         "jev_configured": has_jev,
         "audio_supported": has_gemini,
         "jev_audio_supported": has_gemini and has_jev,
+        "image_supported": has_gemini,
+        "image_models": IMAGE_MODELS,
         "stt_model": GEMINI_STT_MODEL,
     }
+
+
+@app.post("/api/generate-image")
+async def generate_scene_image(req: GenerateImageRequest) -> dict[str, Any]:
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key:
+        raise HTTPException(
+            status_code=503,
+            detail="GEMINI_API_KEY não configurada no servidor — geração de imagens Nano Banana requer GEMINI_API_KEY.",
+        )
+    return await call_nano_banana_image(req, gemini_key)
 
 
 @app.post("/api/evaluate")
@@ -608,6 +809,7 @@ async def evaluate_story_audio(
     audio: UploadFile = File(...),
     estado_atual: str = Form(default="{}"),
     provider: str = Form(default="auto"),
+    need_transcript: str = Form(default="false"),
 ) -> dict[str, Any]:
     selected_provider = resolve_provider(provider)
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -680,5 +882,17 @@ async def evaluate_story_audio(
             "mime_type": mime_type,
         },
     ]
+    if need_transcript.strip().lower() in {"1", "true", "yes"}:
+        result, (transcript, stt_ms) = await asyncio.gather(
+            call_gemini_decisions(blocks, gemini_key),
+            transcribe_audio_with_gemini(b64_audio, mime_type, gemini_key),
+        )
+        if not transcript:
+            return build_no_change_result("gemini", GEMINI_DECISION_MODEL, stt_ms=stt_ms)
+        result["transcript"] = transcript
+        result["stt_ms"] = stt_ms
+        result["stt_model"] = GEMINI_STT_MODEL
+        return result
+
     return await call_gemini_decisions(blocks, gemini_key)
 

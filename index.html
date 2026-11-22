@@ -178,15 +178,117 @@
     }
     .stage-wrap svg { width: 100%; height: 100%; display: block; }
 
+    #ai-stage-wrap {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: #090d24;
+      transition: opacity 450ms ease;
+    }
+    .ai-stage-img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 700ms ease;
+      will-change: opacity, transform;
+    }
+    .ai-stage-img.visible {
+      opacity: 1;
+      animation: ken-burns 18s ease-in-out infinite alternate;
+    }
+    @keyframes ken-burns {
+      0% { transform: scale(1.00) translate(0%, 0%); }
+      100% { transform: scale(1.06) translate(-1.2%, -0.8%); }
+    }
+
+    .ai-gen-pill {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 4;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      background: rgba(11, 16, 32, 0.82);
+      border: 1px solid rgba(56, 189, 248, 0.55);
+      color: #f8fafc;
+      font-size: 0.74rem;
+      font-weight: 600;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    .ai-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #38bdf8;
+      animation: ai-pulse 1s ease-in-out infinite;
+    }
+    @keyframes ai-pulse {
+      0%, 100% { opacity: 0.35; transform: scale(0.85); }
+      50% { opacity: 1; transform: scale(1.25); }
+    }
+
     .caption-bar {
       position: absolute;
       left: 0; right: 0; bottom: 0;
-      padding: 20px 14px 10px;
-      background: linear-gradient(to top, rgba(0,0,0,0.84), rgba(0,0,0,0.42), transparent);
+      z-index: 3;
+      padding: 24px 14px 10px;
+      background: linear-gradient(to top, rgba(0,0,0,0.88), rgba(0,0,0,0.45), transparent);
       color: #ffffff;
       font-size: 0.85rem;
       font-weight: 500;
-      text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.75);
+    }
+
+    .visual-bar {
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .story-gallery {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--card);
+    }
+    .thumb-btn {
+      flex: 0 0 auto;
+      padding: 0;
+      width: 96px;
+      aspect-ratio: 16 / 9;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      background: #090d24;
+      cursor: pointer;
+      position: relative;
+    }
+    .thumb-btn.active { border-color: var(--primary); }
+    .thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-num {
+      position: absolute;
+      left: 4px; bottom: 3px;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.72);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 600;
     }
 
     textarea, input[type="url"] {
@@ -315,7 +417,7 @@
           <span id="mode-badge" class="badge">Simulador local</span>
         </div>
         <p class="subtitle">
-          7 cenários • 3 horários • menino/menina • herói, cachorrinho e dragão • chuva, neve, arco-íris e voo em tempo real.
+          Conte qualquer história por voz ou texto • Jev / Gemini dirigem a cena • Nano Banana 2 Lite e 2.1 ilustram ao vivo.
         </p>
       </div>
       <div class="row">
@@ -805,10 +907,39 @@
                 </g>
               </g>
             </svg>
+            <div id="ai-stage-wrap" class="hidden">
+              <img id="ai-img-a" class="ai-stage-img" alt="Ilustração da história" />
+              <img id="ai-img-b" class="ai-stage-img" alt="Ilustração da história" />
+            </div>
+            <div id="ai-gen-pill" class="ai-gen-pill hidden">
+              <span class="ai-dot"></span>
+              <span id="ai-gen-label">Ilustrando cena...</span>
+            </div>
             <div id="stage-caption" class="caption-bar">
-              Toque em "Falar no microfone", "Simular história" ou digite sua história livre...
+              Toque em "Falar no microfone", digite sua história ou teste "Menino e papai na lua"!
             </div>
           </div>
+
+          <div class="visual-bar">
+            <div class="row" style="gap:6px">
+              <span class="muted" style="font-weight:600">Desenho:</span>
+              <div class="seg-group" role="group" aria-label="Gerador de imagem">
+                <button id="btn-vis-nb2-lite" type="button" class="seg-btn active" data-visual="nb2-lite" title="Mais rápido (< 2s)">🍌 2 Lite</button>
+                <button id="btn-vis-nb21" type="button" class="seg-btn" data-visual="nb21" title="Personagens consistentes">🍌 2.1</button>
+                <button id="btn-vis-svg" type="button" class="seg-btn" data-visual="svg" title="SVG fixo instantâneo">🎭 SVG</button>
+              </div>
+            </div>
+            <div id="style-picker" class="row" style="gap:5px">
+              <div class="seg-group" role="group" aria-label="Estilo da ilustração">
+                <button type="button" class="seg-btn style-btn active" data-style="livro">📖 Livro</button>
+                <button type="button" class="seg-btn style-btn" data-style="aquarela">🎨 Aquarela</button>
+                <button type="button" class="seg-btn style-btn" data-style="3d">🎬 3D</button>
+                <button type="button" class="seg-btn style-btn" data-style="anime">✨ Anime</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="story-gallery" class="story-gallery hidden" aria-label="Páginas ilustradas da história"></div>
         </div>
 
         <div class="card card-pad stack">
@@ -821,6 +952,9 @@
                 <div id="vu-bar" style="height:100%;width:0%;background:var(--success);transition:width 80ms linear"></div>
               </div>
             </div>
+            <button id="btn-gen-image" type="button" class="btn">
+              <span>🎨</span><span>Ilustrar agora</span>
+            </button>
             <button id="btn-demo" type="button" class="btn">
               <span id="demo-label">▶ Simular história</span>
             </button>
@@ -829,18 +963,18 @@
           </div>
 
           <div>
-            <label for="story-input" class="label">Fala / texto ao vivo (ou use o microfone acima):</label>
-            <textarea id="story-input" rows="2" placeholder='Conte qualquer história: "A menina foi para a praia ao pôr do sol com o cachorrinho e apareceu um dragão voando com arco-íris..."'></textarea>
+            <label for="story-input" class="label">Fala / texto livre (qualquer personagem, lugar ou aventura!):</label>
+            <textarea id="story-input" rows="2" placeholder='Conte qualquer história: "Quero ir até a lua de foguete com o menino e o papai..."'></textarea>
           </div>
 
           <div>
             <div class="label">Ideias rápidas para testar:</div>
             <div class="row">
-              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Era uma vez um menino triste no quarto com o cachorrinho dele">Quarto + cachorrinho</button>
-              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Um super-herói apareceu e levou eles voando para a cidade à noite e o menino ficou muito feliz">Cidade à noite + voo</button>
-              <button type="button" class="btn btn-sm phrase-btn" data-phrase="A menina chegou na praia no pôr do sol e apareceu um arco-íris lindo no céu">Praia + entardecer + arco-íris</button>
-              <button type="button" class="btn btn-sm phrase-btn" data-phrase="De repente foram para um castelo mágico onde estava nevando e um dragão apareceu surpreso">Castelo + neve + dragão</button>
-              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Eles voaram até o espaço entre os planetas e as estrelas">Espaço sideral</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="O menino e o papai vestiram capacetes de astronauta e foram de foguete até a lua">🚀 Menino e papai na lua</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Na lua eles encontraram um cachorrinho espacial brilhante pulando nas crateras">🐶 Cachorrinho espacial</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Um dragão amigável com asas de arco-íris levou o menino e o papai voando para um castelo nas nuvens">🐉 Dragão nas nuvens</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Começou a cair neve mágica dourada e os dois ficaram muito felizes rindo juntos">❄️ Neve dourada</button>
+              <button type="button" class="btn btn-sm phrase-btn" data-phrase="Depois voltaram para a praia no pôr do sol para tomar sorvete juntos">🏖️ Praia no pôr do sol</button>
             </div>
           </div>
         </div>
@@ -927,16 +1061,211 @@
       let audioCtx = null;
 
       let selectedProvider = "gemini";
+      let visualMode = "nb2-lite"; // "nb2-lite" | "nb21" | "svg"
+      let imageStyle = "livro"; // "livro" | "aquarela" | "3d" | "anime"
+      let storyHistory = [];
+      let storyPages = []; // { dataUrl, caption, modelLabel, ms }
+      let activeAiSlot = "a";
+      let lastAiImageDataUrl = null;
+      let latestImageReqId = 0;
+      let imageTypingTimer = null;
+
       let healthState = {
         ok: false,
         gemini_configured: false,
         jev_configured: false,
         audio_supported: false,
         jev_audio_supported: false,
+        image_supported: false,
         stt_model: "gemini-3.5-flash-lite",
       };
 
       const el = (id) => document.getElementById(id);
+
+      function updateVisualUI(announce = false) {
+        el("btn-vis-nb2-lite").classList.toggle("active", visualMode === "nb2-lite");
+        el("btn-vis-nb21").classList.toggle("active", visualMode === "nb21");
+        el("btn-vis-svg").classList.toggle("active", visualMode === "svg");
+        el("style-picker").classList.toggle("hidden", visualMode === "svg");
+        el("btn-gen-image").classList.toggle("hidden", visualMode === "svg");
+
+        if (visualMode === "svg") {
+          el("ai-stage-wrap").classList.add("hidden");
+          el("ai-gen-pill").classList.add("hidden");
+        } else if (lastAiImageDataUrl) {
+          el("ai-stage-wrap").classList.remove("hidden");
+        }
+
+        if (announce) {
+          const names = {
+            "nb2-lite": "🍌 Nano Banana 2 Lite (ilustrações rápidas < 2s)",
+            "nb21": "🍌 Nano Banana 2.1 (personagens consistentes entre cenas)",
+            "svg": "🎭 SVG Clássico (desenhos fixos instantâneos)",
+          };
+          el("stage-caption").textContent = `Modo visual: ${names[visualMode] || visualMode}`;
+        }
+      }
+
+      function showAiImage(dataUrl) {
+        const prevImg = el(`ai-img-${activeAiSlot}`);
+        if (prevImg.src === dataUrl && prevImg.classList.contains("visible")) {
+          el("ai-stage-wrap").classList.remove("hidden");
+          lastAiImageDataUrl = dataUrl;
+          return;
+        }
+        const nextSlot = activeAiSlot === "a" ? "b" : "a";
+        const nextImg = el(`ai-img-${nextSlot}`);
+        nextImg.onload = () => {
+          el("ai-stage-wrap").classList.remove("hidden");
+          nextImg.classList.add("visible");
+          prevImg.classList.remove("visible");
+          activeAiSlot = nextSlot;
+        };
+        nextImg.src = dataUrl;
+        lastAiImageDataUrl = dataUrl;
+      }
+
+      function renderGallery(activeIndex = -1) {
+        const gal = el("story-gallery");
+        gal.replaceChildren();
+        if (storyPages.length === 0) {
+          gal.classList.add("hidden");
+          return;
+        }
+        gal.classList.remove("hidden");
+        storyPages.forEach((page, idx) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "thumb-btn" + (idx === activeIndex ? " active" : "");
+          btn.title = `Página ${idx + 1}: ${page.caption}`;
+          const img = document.createElement("img");
+          img.src = page.dataUrl;
+          img.alt = `Página ${idx + 1}`;
+          const num = document.createElement("span");
+          num.className = "thumb-num";
+          num.textContent = `${idx + 1}`;
+          btn.appendChild(img);
+          btn.appendChild(num);
+          btn.addEventListener("click", () => {
+            if (visualMode === "svg") {
+              visualMode = "nb2-lite";
+              updateVisualUI(false);
+            }
+            showAiImage(page.dataUrl);
+            el("stage-caption").textContent = `📖 Página ${idx + 1}: ${page.caption}`;
+            renderGallery(idx);
+          });
+          gal.appendChild(btn);
+        });
+        gal.scrollLeft = gal.scrollWidth;
+      }
+
+      function downscaleDataUrlToJpegBase64(dataUrl, maxWidth = 512) {
+        return new Promise((resolve) => {
+          if (!dataUrl) { resolve(null); return; }
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const scale = Math.min(1, maxWidth / Math.max(1, img.width));
+              const w = Math.max(64, Math.round(img.width * scale));
+              const h = Math.max(36, Math.round(img.height * scale));
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(img, 0, 0, w, h);
+              const jpegUrl = canvas.toDataURL("image/jpeg", 0.72);
+              const comma = jpegUrl.indexOf(",");
+              resolve(comma >= 0 ? jpegUrl.slice(comma + 1) : null);
+            } catch (_) {
+              resolve(null);
+            }
+          };
+          img.onerror = () => resolve(null);
+          img.src = dataUrl;
+        });
+      }
+
+      async function generateSceneImage(phrase, { force = false } = {}) {
+        const text = (phrase || "").trim();
+        if (!text || visualMode === "svg") return;
+        if (!healthState.image_supported) {
+          if (force) {
+            el("mic-status").textContent = "⚠️ Geração de imagem requer servidor com GEMINI_API_KEY.";
+          }
+          return;
+        }
+
+        const myImgId = ++latestImageReqId;
+        const modelUsed = visualMode;
+        const modelLabel = modelUsed === "nb21" ? "Nano Banana 2.1" : "Nano Banana 2 Lite";
+        el("ai-gen-label").textContent = modelUsed === "nb21" && lastAiImageDataUrl
+          ? `Ilustrando (${modelLabel} + consistência)...`
+          : `Ilustrando (${modelLabel})...`;
+        el("ai-gen-pill").classList.remove("hidden");
+
+        let refB64 = null;
+        if (modelUsed === "nb21" && lastAiImageDataUrl) {
+          refB64 = await downscaleDataUrlToJpegBase64(lastAiImageDataUrl, 512);
+        }
+
+        const historyBefore = storyHistory.slice(-5);
+        if (storyHistory[storyHistory.length - 1] !== text) {
+          storyHistory.push(text);
+          if (storyHistory.length > 8) storyHistory.shift();
+        }
+
+        const t0 = performance.now();
+        try {
+          const resp = await fetch("/api/generate-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fala_atual: text,
+              historico: historyBefore,
+              estado_atual: storyState,
+              image_model: modelUsed,
+              estilo: imageStyle,
+              reference_image_b64: refB64,
+              reference_mime_type: refB64 ? "image/jpeg" : null,
+            }),
+          });
+          if (!resp.ok) {
+            let detail = `HTTP ${resp.status}`;
+            try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (_) {}
+            throw new Error(detail);
+          }
+          const data = await resp.json();
+          if (myImgId !== latestImageReqId || visualMode === "svg") return;
+
+          const safeMime = (data.mime_type && /^image\/(png|jpeg|webp)$/.test(data.mime_type))
+            ? data.mime_type
+            : "image/png";
+          const dataUrl = `data:${safeMime};base64,${data.image_b64}`;
+          const totalMs = Math.round(performance.now() - t0);
+
+          showAiImage(dataUrl);
+          storyPages.push({
+            dataUrl,
+            caption: text,
+            modelLabel,
+            ms: data.image_ms || totalMs,
+          });
+          if (storyPages.length > 16) storyPages.shift();
+          renderGallery(storyPages.length - 1);
+
+          el("latency-readout").textContent = `${modelLabel}: ${(data.image_ms / 1000).toFixed(1)}s${data.used_reference ? " (ref ✓)" : ""}`;
+          playTone([587.33, 880], 0.22, "sine", 0.035);
+        } catch (err) {
+          if (myImgId !== latestImageReqId) return;
+          el("mic-status").textContent = `⚠️ Imagem: ${err.message}`;
+          el("backend-status").textContent = `Erro no ${modelLabel}: ${err.message}`;
+        } finally {
+          if (myImgId === latestImageReqId) {
+            el("ai-gen-pill").classList.add("hidden");
+          }
+        }
+      }
 
       function updateProviderUI(announce = false) {
         el("btn-provider-jev").classList.toggle("active", selectedProvider === "jev");
@@ -956,8 +1285,8 @@
             badge.textContent = "Jev ativo";
             badge.classList.add("badge-live");
             el("backend-status").textContent = healthState.jev_audio_supported
-              ? `Motor ativo: TypeSafe Jev (voz transcrita via ${healthState.stt_model} → Jev).`
-              : "Motor ativo: TypeSafe Jev (texto; para voz no iPhone, mantenha GEMINI_API_KEY).";
+              ? `Motor ativo: TypeSafe Jev (voz via ${healthState.stt_model} → Jev; imagens via Nano Banana).`
+              : "Motor ativo: TypeSafe Jev (texto; para voz/imagem mantenha GEMINI_API_KEY).";
             if (announce) {
               el("stage-caption").textContent = "⚡ Motor trocado para TypeSafe Jev! Pode falar ou digitar.";
             }
@@ -976,8 +1305,8 @@
             badge.textContent = "Gemini Decision 1 ativo";
             badge.classList.add("badge-live");
             el("backend-status").textContent = healthState.jev_configured
-              ? "Motor ativo: Gemini Decision 1 (texto + áudio direto). Jev também está pronto no topo."
-              : "Motor ativo: Google Gemini Decision 1 (texto + áudio direto ativos).";
+              ? "Motor ativo: Gemini Decision 1 (texto + áudio + Nano Banana). Jev também está pronto no topo."
+              : "Motor ativo: Google Gemini Decision 1 (texto + áudio + Nano Banana ativos).";
             if (announce) {
               el("stage-caption").textContent = "✦ Motor trocado para Gemini Decision 1! Pode falar ou digitar.";
             }
@@ -1002,22 +1331,32 @@
                 jev_configured: Boolean(data.jev_configured),
                 audio_supported: Boolean(data.audio_supported),
                 jev_audio_supported: Boolean(data.jev_audio_supported),
+                image_supported: Boolean(data.image_supported),
                 stt_model: data.stt_model || "gemini-3.5-flash-lite",
               };
               const hasAny = healthState.jev_configured || healthState.gemini_configured;
               el("use-real-api").checked = hasAny;
               el("use-direct-audio").checked = Boolean(data.audio_supported);
               selectedProvider = data.default_provider === "jev" ? "jev" : "gemini";
+              visualMode = healthState.image_supported ? "nb2-lite" : "svg";
               updateProviderUI(false);
+              updateVisualUI(false);
             } else {
+              visualMode = "svg";
+              updateVisualUI(false);
               el("backend-status").textContent =
                 "Hospedagem estática (GitHub Pages) — usando simulador local.";
             }
           })
           .catch(() => {
+            visualMode = "svg";
+            updateVisualUI(false);
             el("backend-status").textContent =
               "Modo estático (sem backend conectado) — usando simulador local.";
           });
+      } else {
+        visualMode = "svg";
+        updateVisualUI(false);
       }
 
       function ensureAudio() {
@@ -1423,13 +1762,14 @@
           stt_ms: raw.stt_ms !== undefined ? raw.stt_ms : undefined,
           stt_model: raw.stt_model || undefined,
           server_ms: raw.server_ms,
+          scene_visual_change: raw.scene_visual_change || undefined,
           usage: raw.usage,
           choices: raw.choices,
           toggles: raw.toggles,
         }, null, 2);
       }
 
-      async function evaluateText(text) {
+      async function evaluateText(text, { triggerImage = false } = {}) {
         const trimmed = text.trim();
         if (!trimmed) return;
         const words = trimmed.split(/\s+/);
@@ -1485,6 +1825,15 @@
         const label = result.mode === "jev" ? "Jev" : "Gemini";
         el("latency-readout").textContent = result.server_ms ? `${ms} ms (${label}: ${result.server_ms} ms)` : `${ms} ms`;
         applyEvaluation(result);
+
+        if (triggerImage && visualMode !== "svg" && healthState.image_supported) {
+          const shouldDraw = !result.scene_visual_change
+            || result.scene_visual_change.should_generate !== false
+            || !lastAiImageDataUrl;
+          if (shouldDraw) {
+            generateSceneImage(recentWindow);
+          }
+        }
       }
 
       // Fila sequencial para áudio: nunca descarta uma frase válida quando você fala seguido
@@ -1514,6 +1863,9 @@
           form.append("audio", blob, "fala.wav");
           form.append("estado_atual", JSON.stringify(storyState));
           form.append("provider", providerAtSend);
+          if (visualMode !== "svg") {
+            form.append("need_transcript", "true");
+          }
 
           try {
             const resp = await fetch("/api/evaluate-audio", { method: "POST", body: form });
@@ -1546,6 +1898,14 @@
             if (result.transcript) {
               el("story-input").value = result.transcript;
               el("stage-caption").textContent = `🎙️ "${result.transcript}"`;
+              if (visualMode !== "svg" && healthState.image_supported) {
+                const shouldDraw = !result.scene_visual_change
+                  || result.scene_visual_change.should_generate !== false
+                  || !lastAiImageDataUrl;
+                if (shouldDraw) {
+                  generateSceneImage(result.transcript);
+                }
+              }
             } else {
               el("stage-caption").textContent = `🎙️ ${el("pill-cenario").textContent} · ${el("pill-periodo").textContent} · ${el("pill-emocao").textContent} · ${el("pill-extras").textContent}`;
             }
@@ -1560,7 +1920,13 @@
 
       function scheduleEvaluation(text, delay = 350) {
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => evaluateText(text), delay);
+        debounceTimer = setTimeout(() => evaluateText(text, { triggerImage: false }), delay);
+        clearTimeout(imageTypingTimer);
+        if (visualMode !== "svg" && healthState.image_supported && text.trim().length >= 8) {
+          imageTypingTimer = setTimeout(() => {
+            evaluateText(text, { triggerImage: true });
+          }, 1250);
+        }
       }
 
       // =========================================================================
@@ -1819,11 +2185,11 @@
       }
 
       const DEMO_STEPS = [
-        "Era uma vez uma menina triste no quarto com o cachorrinho dela",
-        "De repente um super-herói chegou e levou eles voando para a praia no pôr do sol",
-        "Apareceu um arco-íris lindo no céu e a menina ficou muito feliz",
-        "Depois foram para um castelo mágico à noite onde começou a nevar e um dragão apareceu",
-        "E no final todos voaram juntos até o espaço entre os planetas e as estrelas",
+        "O menino e o papai vestiram capacetes de astronauta e entraram num foguete vermelho para ir até a lua",
+        "Na lua eles encontraram um cachorrinho espacial brilhante pulando feliz entre as estrelas",
+        "Um dragão amigável com asas de arco-íris levou todos voando para um castelo mágico nas nuvens",
+        "Começou a cair neve dourada no castelo e todos riram muito felizes juntos",
+        "No final voltaram para a praia no pôr do sol para comemorar tomando sorvete",
       ];
 
       function stopDemo() {
@@ -1850,7 +2216,10 @@
           const partial = words.slice(0, wordIdx).join(" ");
           el("story-input").value = partial;
           el("stage-caption").textContent = partial;
-          if (wordIdx % 4 === 0 || wordIdx === words.length) evaluateText(partial);
+          const isStepEnd = wordIdx === words.length;
+          if (wordIdx % 4 === 0 || isStepEnd) {
+            evaluateText(partial, { triggerImage: isStepEnd });
+          }
 
           if (wordIdx < words.length) {
             demoTimer = setTimeout(tick, 220);
@@ -1859,7 +2228,7 @@
             if (stepIdx < DEMO_STEPS.length) {
               words = DEMO_STEPS[stepIdx].split(" ");
               wordIdx = 0;
-              demoTimer = setTimeout(tick, 1900);
+              demoTimer = setTimeout(tick, visualMode === "svg" ? 1900 : 4200);
             } else {
               stopDemo();
             }
@@ -1875,6 +2244,40 @@
       el("btn-provider-gemini").addEventListener("click", () => {
         selectedProvider = "gemini";
         updateProviderUI(true);
+      });
+
+      ["nb2-lite", "nb21", "svg"].forEach((mode) => {
+        el(`btn-vis-${mode}`).addEventListener("click", () => {
+          visualMode = mode;
+          updateVisualUI(true);
+        });
+      });
+
+      document.querySelectorAll(".style-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          imageStyle = btn.getAttribute("data-style") || "livro";
+          document.querySelectorAll(".style-btn").forEach((b) =>
+            b.classList.toggle("active", b === btn)
+          );
+          const currentTxt = el("story-input").value.trim();
+          if (currentTxt && visualMode !== "svg" && healthState.image_supported) {
+            generateSceneImage(currentTxt, { force: true });
+          }
+        });
+      });
+
+      el("btn-gen-image").addEventListener("click", () => {
+        stopDemo();
+        const phrase = el("story-input").value.trim() || storyHistory[storyHistory.length - 1] || "";
+        if (!phrase) {
+          el("stage-caption").textContent = "Fale ou digite uma frase primeiro para gerar a ilustração!";
+          return;
+        }
+        if (visualMode === "svg") {
+          visualMode = "nb2-lite";
+          updateVisualUI(false);
+        }
+        generateSceneImage(phrase, { force: true });
       });
 
       el("btn-mic").addEventListener("click", () => wantListening ? stopMic() : startMic());
@@ -1896,17 +2299,28 @@
           stopDemo();
           const phrase = btn.getAttribute("data-phrase");
           el("story-input").value = phrase;
-          evaluateText(phrase);
+          evaluateText(phrase, { triggerImage: true });
         });
       });
 
       el("btn-reset").addEventListener("click", () => {
         stopDemo();
         stopMic();
+        clearTimeout(debounceTimer);
+        clearTimeout(imageTypingTimer);
         audioQueue = [];
         latestRequestId += 1;
+        latestImageReqId += 1;
         storyState = { ...INITIAL_STATE };
+        storyHistory = [];
+        storyPages = [];
+        lastAiImageDataUrl = null;
         lastRawEval = null;
+        el("ai-img-a").classList.remove("visible");
+        el("ai-img-b").classList.remove("visible");
+        el("ai-stage-wrap").classList.add("hidden");
+        el("ai-gen-pill").classList.add("hidden");
+        renderGallery(-1);
         el("story-input").value = "";
         el("stage-caption").textContent = "Cena reiniciada. Fale ou digite sua história!";
         el("latency-readout").textContent = "Pronto";
